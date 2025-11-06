@@ -5,6 +5,8 @@ import { logger as honoLogger } from 'hono/logger';
 import { logger } from './lib/logger.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { NotFoundError } from './lib/errors.js';
+import { initializeDatabase, disconnectDatabase, getDatabaseHealth } from './lib/db.js';
+import { initializeRedis, disconnectRedis, getRedisHealth } from './lib/redis.js';
 import 'dotenv/config';
 
 const app = new Hono();
@@ -18,14 +20,33 @@ app.use('/*', cors({
 // Hono request logger
 app.use('/*', honoLogger());
 
-// Health check endpoint
-app.get('/health', (c) => {
+// Health check endpoint with database and Redis status
+app.get('/health', async (c) => {
+  const [dbHealth, redisHealth] = await Promise.all([
+    getDatabaseHealth(),
+    getRedisHealth(),
+  ]);
+
+  const isHealthy = dbHealth.connected && redisHealth.connected;
+
   return c.json({
-    status: 'healthy',
+    status: isHealthy ? 'healthy' : 'degraded',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
     uptime: process.uptime(),
-  });
+    services: {
+      database: {
+        status: dbHealth.connected ? 'up' : 'down',
+        responseTime: dbHealth.responseTime,
+        error: dbHealth.error,
+      },
+      redis: {
+        status: redisHealth.connected ? 'up' : 'down',
+        responseTime: redisHealth.responseTime,
+        error: redisHealth.error,
+      },
+    },
+  }, isHealthy ? 200 : 503);
 });
 
 // Root endpoint
@@ -59,29 +80,57 @@ app.onError(errorHandler);
 
 const port = parseInt(process.env.PORT || '3000');
 
-// Start server
-const server = serve({
-  fetch: app.fetch,
-  port,
-}, (info) => {
-  logger.info(`🚀 Server running on http://localhost:${info.port}`);
-});
+// Initialize connections and start server
+async function startServer() {
+  try {
+    logger.info('Initializing services...');
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
-  });
-});
+    // Initialize database
+    try {
+      await initializeDatabase();
+    } catch (error) {
+      logger.warn('Database initialization failed, server will start anyway');
+    }
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT signal received: closing HTTP server');
-  server.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
-  });
-});
+    // Initialize Redis
+    try {
+      await initializeRedis();
+    } catch (error) {
+      logger.warn('Redis initialization failed, server will start anyway');
+    }
+
+    // Start server
+    const server = serve({
+      fetch: app.fetch,
+      port,
+    }, (info) => {
+      logger.info(`🚀 Server running on http://localhost:${info.port}`);
+    });
+
+    // Graceful shutdown
+    const shutdown = async () => {
+      logger.info('Shutting down gracefully...');
+
+      server.close(() => {
+        logger.info('HTTP server closed');
+      });
+
+      await disconnectDatabase();
+      await disconnectRedis();
+
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+
+  } catch (error) {
+    logger.fatal({ err: error }, 'Failed to start server');
+    process.exit(1);
+  }
+}
+
+// Start the server
+startServer();
 
 export default app;
