@@ -167,7 +167,9 @@ app.use('/api/auth/*', async (c) => {
 // S3 API routes (AWS SDK/CLI compatible)
 // Import dynamically to avoid circular dependencies
 import s3BucketRoutes from './routes/s3-bucket.js';
+import s3ObjectRoutes from './routes/s3-object.js';
 app.route('/s3', s3BucketRoutes);
+app.route('/s3', s3ObjectRoutes);
 
 // tRPC handler with rate limiting
 app.use('/trpc/*', apiRateLimiter);
