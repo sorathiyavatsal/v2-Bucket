@@ -16,7 +16,16 @@ import { metricsMiddleware } from './middleware/metrics.js';
 import { metricsCollector } from './lib/metrics.js';
 import { timeout } from './middleware/timeout.js';
 import { validateEnv } from './lib/env.js';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+
+// Get the directory of the current module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load .env from monorepo root (3 levels up: src -> api -> apps -> v2-bucket)
+dotenv.config({ path: resolve(__dirname, '../../../.env') });
 
 // Validate environment variables on startup
 validateEnv();
