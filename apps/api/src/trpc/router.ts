@@ -6,6 +6,7 @@ import { accessKeyRouter } from './routers/access-key.js';
 import { bucketRouter } from './routers/bucket.js';
 import { objectRouter } from './routers/object.js';
 import { multipartRouter } from './routers/multipart.js';
+import { presignedUrlRouter } from './routers/presigned-url.js';
 
 /**
  * Main application router
@@ -18,6 +19,7 @@ export const appRouter = router({
   bucket: bucketRouter,
   object: objectRouter,
   multipart: multipartRouter,
+  presignedUrl: presignedUrlRouter,
   // Future routers will be added here:
   // user: userRouter,
   // domain: domainRouter,
