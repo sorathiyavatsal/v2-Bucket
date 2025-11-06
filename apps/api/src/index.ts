@@ -12,9 +12,22 @@ import { appRouter } from './trpc/router.js';
 import { createContext } from './trpc/context.js';
 import { securityHeaders, requestId, trustedProxy } from './middleware/security.js';
 import { apiRateLimiter } from './middleware/rate-limit.js';
+import { metricsMiddleware } from './middleware/metrics.js';
+import { metricsCollector } from './lib/metrics.js';
+import { timeout } from './middleware/timeout.js';
+import { validateEnv } from './lib/env.js';
 import 'dotenv/config';
 
+// Validate environment variables on startup
+validateEnv();
+
 const app = new Hono();
+
+// Request timeout (30 seconds)
+app.use('/*', timeout(30000));
+
+// Metrics collection (first middleware to capture all requests)
+app.use('/*', metricsMiddleware);
 
 // Security headers
 app.use('/*', securityHeaders);
@@ -34,10 +47,7 @@ app.use('/*', cors({
 // Hono request logger
 app.use('/*', honoLogger());
 
-// Rate limiting (applied to all routes)
-app.use('/*', apiRateLimiter);
-
-// Health check endpoint with database and Redis status
+// Health check endpoint with database and Redis status (no rate limiting)
 app.get('/health', async (c) => {
   const [dbHealth, redisHealth] = await Promise.all([
     getDatabaseHealth(),
@@ -66,6 +76,63 @@ app.get('/health', async (c) => {
   }, isHealthy ? 200 : 503);
 });
 
+// Liveness probe - checks if application is running
+// Used by Kubernetes to determine if container should be restarted
+app.get('/health/live', (c) => {
+  return c.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  }, 200);
+});
+
+// Readiness probe - checks if application can handle requests
+// Used by Kubernetes to determine if traffic should be routed to this instance
+app.get('/health/ready', async (c) => {
+  const [dbHealth, redisHealth] = await Promise.all([
+    getDatabaseHealth(),
+    getRedisHealth(),
+  ]);
+
+  // Application is ready if database is available
+  // Redis is optional - graceful degradation
+  const isReady = dbHealth.connected;
+
+  if (!isReady) {
+    return c.json({
+      status: 'not_ready',
+      timestamp: new Date().toISOString(),
+      reason: 'Database not connected',
+      services: {
+        database: { status: 'down', error: dbHealth.error },
+        redis: { status: redisHealth.connected ? 'up' : 'down' },
+      },
+    }, 503);
+  }
+
+  return c.json({
+    status: 'ready',
+    timestamp: new Date().toISOString(),
+    services: {
+      database: { status: 'up', responseTime: dbHealth.responseTime },
+      redis: { status: redisHealth.connected ? 'up' : 'down' },
+    },
+  }, 200);
+});
+
+// Prometheus metrics endpoint
+app.get('/metrics', (c) => {
+  const metrics = metricsCollector.getPrometheusMetrics();
+  return c.text(metrics, 200, {
+    'Content-Type': 'text/plain; version=0.0.4',
+  });
+});
+
+// Metrics as JSON (for debugging)
+app.get('/metrics/json', (c) => {
+  return c.json(metricsCollector.getMetrics());
+});
+
 // Root endpoint
 app.get('/', (c) => {
   return c.json({
@@ -82,7 +149,8 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
-// tRPC handler
+// tRPC handler with rate limiting
+app.use('/trpc/*', apiRateLimiter);
 app.use('/trpc/*', async (c) => {
   return fetchRequestHandler({
     req: c.req.raw,
