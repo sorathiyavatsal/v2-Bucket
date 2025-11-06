@@ -5,6 +5,7 @@ import { authRouter } from './routers/auth.js';
 import { accessKeyRouter } from './routers/access-key.js';
 import { bucketRouter } from './routers/bucket.js';
 import { objectRouter } from './routers/object.js';
+import { multipartRouter } from './routers/multipart.js';
 
 /**
  * Main application router
@@ -16,6 +17,7 @@ export const appRouter = router({
   accessKey: accessKeyRouter,
   bucket: bucketRouter,
   object: objectRouter,
+  multipart: multipartRouter,
   // Future routers will be added here:
   // user: userRouter,
   // domain: domainRouter,
