@@ -3,6 +3,8 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
 import { logger } from './lib/logger.js';
+import { errorHandler } from './middleware/error-handler.js';
+import { NotFoundError } from './lib/errors.js';
 import 'dotenv/config';
 
 const app = new Hono();
@@ -35,22 +37,25 @@ app.get('/', (c) => {
   });
 });
 
+// Test error endpoint (development only)
+if (process.env.NODE_ENV === 'development') {
+  app.get('/test-error', (c) => {
+    throw new Error('This is a test error');
+  });
+}
+
 // 404 handler
 app.notFound((c) => {
+  const err = new NotFoundError('The requested resource does not exist');
   return c.json({
-    error: 'Not Found',
-    message: 'The requested resource does not exist',
+    error: err.name,
+    code: err.code,
+    message: err.message,
   }, 404);
 });
 
 // Error handler
-app.onError((err, c) => {
-  logger.error({ err }, 'Unhandled error');
-  return c.json({
-    error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',
-  }, 500);
-});
+app.onError(errorHandler);
 
 const port = parseInt(process.env.PORT || '3000');
 
