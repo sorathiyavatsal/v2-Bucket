@@ -6,6 +6,9 @@ import { ServiceUnavailableError } from './errors.js';
 // Create Redis client
 export const redis = createClient({
   url: process.env.REDIS_URL || 'redis://localhost:6379',
+  socket: {
+    reconnectStrategy: false, // Disable auto reconnect for now
+  },
 });
 
 // Error handling

@@ -7,6 +7,9 @@ import { errorHandler } from './middleware/error-handler.js';
 import { NotFoundError } from './lib/errors.js';
 import { initializeDatabase, disconnectDatabase, getDatabaseHealth } from './lib/db.js';
 import { initializeRedis, disconnectRedis, getRedisHealth } from './lib/redis.js';
+import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
+import { appRouter } from './trpc/router.js';
+import { createContext } from './trpc/context.js';
 import 'dotenv/config';
 
 const app = new Hono();
@@ -64,6 +67,16 @@ if (process.env.NODE_ENV === 'development') {
     throw new Error('This is a test error');
   });
 }
+
+// tRPC handler
+app.use('/trpc/*', async (c) => {
+  return fetchRequestHandler({
+    req: c.req.raw,
+    router: appRouter,
+    endpoint: '/trpc',
+    createContext: () => createContext({ c }),
+  });
+});
 
 // 404 handler
 app.notFound((c) => {
