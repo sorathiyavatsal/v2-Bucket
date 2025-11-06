@@ -106,6 +106,30 @@ model Passkey {
   @@index([userId])
 }
 
+model Verification {
+  id            String   @id @default(cuid())
+  identifier    String   // Email or phone number
+  token         String   @unique
+  type          String   // email_verification, password_reset, magic_link
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([token])
+  @@index([identifier])
+}
+
+model PasswordReset {
+  id            String   @id @default(cuid())
+  userId        String
+  token         String   @unique
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+}
+
 // ============================================
 // ACCESS KEYS (AWS Credentials)
 // ============================================
