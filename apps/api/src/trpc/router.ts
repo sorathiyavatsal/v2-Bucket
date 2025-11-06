@@ -7,6 +7,7 @@ import { bucketRouter } from './routers/bucket.js';
 import { objectRouter } from './routers/object.js';
 import { multipartRouter } from './routers/multipart.js';
 import { presignedUrlRouter } from './routers/presigned-url.js';
+import { bucketPolicyRouter } from './routers/bucket-policy.js';
 
 /**
  * Main application router
@@ -20,6 +21,7 @@ export const appRouter = router({
   object: objectRouter,
   multipart: multipartRouter,
   presignedUrl: presignedUrlRouter,
+  bucketPolicy: bucketPolicyRouter,
   // Future routers will be added here:
   // user: userRouter,
   // domain: domainRouter,
