@@ -158,6 +158,12 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
+// Better-Auth routes (handles all auth endpoints: /api/auth/*)
+app.use('/api/auth/*', async (c) => {
+  const { authHandler } = await import('./lib/auth.js');
+  return authHandler(c.req.raw);
+});
+
 // tRPC handler with rate limiting
 app.use('/trpc/*', apiRateLimiter);
 app.use('/trpc/*', async (c) => {
