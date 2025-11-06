@@ -2,6 +2,7 @@
 import { router } from './init.js';
 import { testRouter } from './routers/test.js';
 import { authRouter } from './routers/auth.js';
+import { accessKeyRouter } from './routers/access-key.js';
 
 /**
  * Main application router
@@ -10,11 +11,11 @@ import { authRouter } from './routers/auth.js';
 export const appRouter = router({
   test: testRouter,
   auth: authRouter,
+  accessKey: accessKeyRouter,
   // Future routers will be added here:
   // user: userRouter,
   // bucket: bucketRouter,
   // object: objectRouter,
-  // accessKey: accessKeyRouter,
   // domain: domainRouter,
   // webhook: webhookRouter,
 });
