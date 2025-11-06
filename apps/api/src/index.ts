@@ -10,9 +10,20 @@ import { initializeRedis, disconnectRedis, getRedisHealth } from './lib/redis.js
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { appRouter } from './trpc/router.js';
 import { createContext } from './trpc/context.js';
+import { securityHeaders, requestId, trustedProxy } from './middleware/security.js';
+import { apiRateLimiter } from './middleware/rate-limit.js';
 import 'dotenv/config';
 
 const app = new Hono();
+
+// Security headers
+app.use('/*', securityHeaders);
+
+// Request ID
+app.use('/*', requestId);
+
+// Trusted proxy handling
+app.use('/*', trustedProxy);
 
 // CORS middleware
 app.use('/*', cors({
@@ -22,6 +33,9 @@ app.use('/*', cors({
 
 // Hono request logger
 app.use('/*', honoLogger());
+
+// Rate limiting (applied to all routes)
+app.use('/*', apiRateLimiter);
 
 // Health check endpoint with database and Redis status
 app.get('/health', async (c) => {
