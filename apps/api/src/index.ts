@@ -168,8 +168,10 @@ app.use('/api/auth/*', async (c) => {
 // Import dynamically to avoid circular dependencies
 import s3BucketRoutes from './routes/s3-bucket.js';
 import s3ObjectRoutes from './routes/s3-object.js';
+import s3MultipartRoutes from './routes/s3-multipart.js';
 app.route('/s3', s3BucketRoutes);
 app.route('/s3', s3ObjectRoutes);
+app.route('/s3', s3MultipartRoutes);
 
 // tRPC handler with rate limiting
 app.use('/trpc/*', apiRateLimiter);
