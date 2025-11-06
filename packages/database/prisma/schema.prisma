@@ -1,0 +1,471 @@
+// packages/database/prisma/schema.prisma
+// V2-Bucket Platform Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTHENTICATION & USERS
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  name          String?
+  image         String?
+  password      String?   // Hashed password for email/password auth
+  isAdmin       Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Better-Auth fields
+  sessions      Session[]
+  accounts      Account[]
+  twoFactor     TwoFactor?
+  passkeys      Passkey[]
+
+  // S3 Platform fields
+  buckets       Bucket[]
+  accessKeys    AccessKey[]
+  domains       Domain[]
+  tasks         Task[]
+  auditLogs     AuditLog[]
+  webhooks      Webhook[]
+
+  // Quotas
+  storageQuota  BigInt    @default(107374182400) // 100GB
+  maxBuckets    Int       @default(10)
+  usedStorage   BigInt    @default(0)
+
+  @@index([email])
+  @@index([isAdmin])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String   // google, github, etc.
+  providerAccountId String
+  accessToken       String?  @db.Text
+  refreshToken      String?  @db.Text
+  expiresAt         DateTime?
+  createdAt         DateTime @default(now())
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model TwoFactor {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  secret    String
+  enabled   Boolean  @default(false)
+  backupCodes String[]
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Passkey {
+  id            String   @id @default(cuid())
+  userId        String
+  credentialId  String   @unique
+  publicKey     String
+  counter       Int
+  name          String?
+  createdAt     DateTime @default(now())
+  lastUsedAt    DateTime?
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ============================================
+// ACCESS KEYS (AWS Credentials)
+// ============================================
+
+model AccessKey {
+  id            String   @id @default(cuid())
+  userId        String
+  accessKeyId   String   @unique // AKIA... format
+  secretKeyHash String   // Hashed secret key
+  name          String?
+  isActive      Boolean  @default(true)
+  lastUsedAt    DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([accessKeyId])
+}
+
+// ============================================
+// BUCKETS
+// ============================================
+
+model Bucket {
+  id            String   @id @default(cuid())
+  name          String   @unique // Bucket name (globally unique)
+  userId        String
+  region        String   @default("us-east-1")
+  volumePath    String   // Physical storage volume path
+  storageClass  String   @default("STANDARD")
+
+  // Versioning
+  versioningEnabled Boolean @default(false)
+  mfaDelete         Boolean @default(false)
+
+  // Encryption
+  encryptionEnabled Boolean @default(false)
+  encryptionAlgorithm String? // AES256, aws:kms
+  kmsKeyId          String?
+
+  // Access Control
+  acl           String   @default("private") // private, public-read, public-read-write
+  policy        Json?    // Bucket policy JSON
+  corsRules     Json?    // CORS configuration
+
+  // Static Website Hosting
+  websiteEnabled Boolean @default(false)
+  indexDocument  String?
+  errorDocument  String?
+
+  // Lifecycle
+  lifecycleRules Json?
+
+  // Statistics
+  objectCount   Int      @default(0)
+  totalSize     BigInt   @default(0)
+
+  // Metadata
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  objects       Object[]
+  domains       Domain[]
+  accessPoints  AccessPoint[]
+  webhooks      Webhook[]
+  tasks         Task[]
+
+  @@index([userId])
+  @@index([name])
+}
+
+// ============================================
+// OBJECTS (S3 Object Metadata)
+// ============================================
+
+model Object {
+  id            String   @id @default(cuid())
+  bucketId      String
+  key           String   // Object key (path)
+  versionId     String?  // For versioning
+  isLatest      Boolean  @default(true)
+  isDeleteMarker Boolean @default(false)
+
+  // File Info
+  size          BigInt
+  contentType   String   @default("application/octet-stream")
+  etag          String   // MD5 hash
+  md5Hash       String?
+  storageClass  String   @default("STANDARD")
+
+  // Physical Storage
+  physicalPath  String   // Actual file path on disk
+
+  // Metadata
+  userMetadata  Json?    // User-defined metadata (x-amz-meta-*)
+  systemMetadata Json?   // System metadata
+
+  // Timestamps
+  lastModified  DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  // Relations
+  bucket        Bucket   @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@unique([bucketId, key, versionId])
+  @@index([bucketId])
+  @@index([key])
+  @@index([bucketId, key])
+}
+
+// ============================================
+// MULTIPART UPLOADS
+// ============================================
+
+model MultipartUpload {
+  id            String   @id @default(cuid())
+  uploadId      String   @unique
+  bucketId      String
+  key           String
+
+  // State
+  status        String   @default("initiated") // initiated, completed, aborted
+
+  // Metadata
+  contentType   String?
+  metadata      Json?
+
+  // Timestamps
+  initiatedAt   DateTime @default(now())
+  completedAt   DateTime?
+
+  // Relations
+  parts         MultipartPart[]
+
+  @@index([bucketId, key])
+  @@index([uploadId])
+}
+
+model MultipartPart {
+  id            String   @id @default(cuid())
+  uploadId      String
+  partNumber    Int
+  etag          String
+  size          BigInt
+  uploadedAt    DateTime @default(now())
+
+  multipartUpload MultipartUpload @relation(fields: [uploadId], references: [uploadId], onDelete: Cascade)
+
+  @@unique([uploadId, partNumber])
+  @@index([uploadId])
+}
+
+// ============================================
+// CUSTOM DOMAINS
+// ============================================
+
+model Domain {
+  id            String   @id @default(cuid())
+  domain        String   @unique // example.com
+  userId        String
+  bucketId      String?  // If domain is mapped to bucket
+
+  // Verification
+  verified      Boolean  @default(false)
+  verificationToken String
+  verificationMethod String @default("DNS") // DNS, HTTP
+
+  // SSL
+  sslEnabled    Boolean  @default(true)
+  sslProvider   String   @default("letsencrypt")
+  certificatePath String?
+
+  // Routing
+  routingMode   String   @default("bucket") // bucket, cdn, redirect
+  redirectTo    String?
+
+  // Status
+  status        String   @default("pending") // pending, active, failed
+
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  verifiedAt    DateTime?
+
+  // Relations
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bucket        Bucket?  @relation(fields: [bucketId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([bucketId])
+  @@index([domain])
+}
+
+// ============================================
+// TASKS (Automation)
+// ============================================
+
+model Task {
+  id            String   @id @default(cuid())
+  userId        String
+  bucketId      String?
+
+  // Task Info
+  name          String
+  type          String   // download, upload, sync, copy, move, delete, compress, script, cron, lifecycle
+  status        String   @default("pending") // pending, running, completed, failed, paused, cancelled
+
+  // Configuration
+  config        Json     // Task-specific configuration
+  schedule      String?  // Cron expression for scheduled tasks
+
+  // Progress
+  progress      Int      @default(0)
+  totalItems    Int?
+  processedItems Int     @default(0)
+  failedItems   Int      @default(0)
+
+  // Dependencies
+  dependsOn     String[] // Array of task IDs
+
+  // Results
+  result        Json?
+  error         String?  @db.Text
+  logs          String?  @db.Text
+
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  startedAt     DateTime?
+  completedAt   DateTime?
+  nextRunAt     DateTime? // For scheduled tasks
+  lastRunAt     DateTime?
+
+  // Relations
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bucket        Bucket?  @relation(fields: [bucketId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([bucketId])
+  @@index([status])
+  @@index([type])
+}
+
+// ============================================
+// ACCESS POINTS
+// ============================================
+
+model AccessPoint {
+  id            String   @id @default(cuid())
+  name          String
+  bucketId      String
+
+  // Network Origin
+  networkOrigin String   @default("Internet") // Internet, VPC
+  vpcId         String?
+
+  // Policy
+  policy        Json?
+
+  // Status
+  status        String   @default("active")
+
+  // Timestamps
+  createdAt     DateTime @default(now())
+
+  // Relations
+  bucket        Bucket   @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@unique([bucketId, name])
+  @@index([bucketId])
+}
+
+// ============================================
+// WEBHOOKS
+// ============================================
+
+model Webhook {
+  id            String   @id @default(cuid())
+  userId        String
+  bucketId      String?
+
+  // Configuration
+  url           String
+  events        String[] // s3:ObjectCreated:*, s3:ObjectRemoved:*, etc.
+  secret        String?  // For signature verification
+
+  // Status
+  enabled       Boolean  @default(true)
+
+  // Statistics
+  totalCalls    Int      @default(0)
+  failedCalls   Int      @default(0)
+  lastCalledAt  DateTime?
+  lastStatus    Int?     // HTTP status code
+
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bucket        Bucket?  @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([bucketId])
+}
+
+// ============================================
+// AUDIT LOGS
+// ============================================
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  userId        String?
+
+  // Event Info
+  action        String   // bucket:create, object:upload, user:login, etc.
+  resource      String   // bucket:my-bucket, object:my-bucket/file.txt
+  status        String   // success, failure
+
+  // Request Info
+  ipAddress     String?
+  userAgent     String?
+  method        String?  // HTTP method
+  path          String?
+
+  // Additional Data
+  metadata      Json?
+  error         String?  @db.Text
+
+  // Timestamp
+  createdAt     DateTime @default(now())
+
+  // Relations
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================
+// PRESIGNED URLS (Tracking)
+// ============================================
+
+model PresignedUrl {
+  id            String   @id @default(cuid())
+  bucketName    String
+  objectKey     String
+  operation     String   // GET, PUT
+  signature     String
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+  usedAt        DateTime?
+  usedCount     Int      @default(0)
+
+  @@index([signature])
+  @@index([expiresAt])
+}
