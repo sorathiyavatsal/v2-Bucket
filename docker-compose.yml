@@ -94,7 +94,6 @@ services:
         condition: service_healthy
     working_dir: /app
     environment:
-      NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-v2bucket}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-v2bucket}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
@@ -159,7 +158,6 @@ services:
         condition: service_healthy
     working_dir: /app
     environment:
-      NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
