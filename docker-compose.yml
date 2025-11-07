@@ -1,12 +1,25 @@
+x-common-variables: &common-variables
+  POSTGRES_USER: v2bucket
+  POSTGRES_PASSWORD: S90gRUg5n
+  POSTGRES_DB: v2bucket
+  REDIS_PASSWORD: S90gRUg5n
+  JWT_SECRET: eZUD5Lh2All1Z1izl2EyLam3+Jtp6tUQ1BK0RtcP7sY=
+  BETTER_AUTH_SECRET: nmabMgr2dRhKIPPfYeCHJaf8pdyHbZ6q5oW37GvGRqA=
+  BETTER_AUTH_URL: http://vatsal-nas.tail87f856.ts.net:3000
+  CORS_ORIGIN: http://vatsal-nas.tail87f856.ts.net:3001
+  NEXT_PUBLIC_API_URL: http://vatsal-nas.tail87f856.ts.net:3000
+  GIT_REPO: https://github.com/sorathiyavatsal/v2-Bucket.git
+  GIT_BRANCH: main
+  API_PORT: 3000
+  WEB_PORT: 3001
+
 services:
   postgres:
     image: postgres:14-alpine
     container_name: v2bucket-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-v2bucket}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-v2bucket}
+      <<: *common-variables
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -15,20 +28,22 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - pg_isready -U ${POSTGRES_USER:-v2bucket}
-      interval: 10s
+        - pg_isready -U v2bucket -d v2bucket
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 10
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
     container_name: v2bucket-redis
     restart: unless-stopped
+    environment:
+      <<: *common-variables
     command:
       - redis-server
       - --requirepass
-      - ${REDIS_PASSWORD}
+      - S90gRUg5n
       - --appendonly
       - yes
     volumes:
@@ -52,8 +67,7 @@ services:
     container_name: v2bucket-builder
     working_dir: /build
     environment:
-      GIT_REPO: ${GIT_REPO}
-      GIT_BRANCH: ${GIT_BRANCH:-main}
+      <<: *common-variables
     volumes:
       - build-cache:/build
     networks:
@@ -68,11 +82,11 @@ services:
         apk add --no-cache git openssh-client
         if [ ! -d /build/v2-bucket/.git ]; then
           echo "Cloning repository..."
-          git clone --depth 1 --branch $${GIT_BRANCH} $${GIT_REPO} /build/v2-bucket
+          git clone --depth 1 --branch main https://github.com/sorathiyavatsal/v2-Bucket.git /build/v2-bucket
         else
           echo "Repository exists, pulling latest..."
           cd /build/v2-bucket
-          git pull origin $${GIT_BRANCH}
+          git pull origin main
         fi
         echo "Build preparation complete"
         sleep infinity
@@ -90,20 +104,17 @@ services:
         condition: service_healthy
     working_dir: /app
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-v2bucket}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-v2bucket}?schema=public
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      <<: *common-variables
+      DATABASE_URL: postgresql://v2bucket:S90gRUg5n@postgres:5432/v2bucket?schema=public
+      REDIS_URL: redis://:S90gRUg5n@redis:6379
       STORAGE_PATH: /storage
-      CORS_ORIGIN: ${CORS_ORIGIN}
     volumes:
       - build-cache:/build:ro
       - storage-data:/storage
     networks:
       - v2bucket-network
     ports:
-      - ${API_PORT:-3000}:3000
+      - 3000:3000
     entrypoint:
       - /bin/sh
       - -c
@@ -111,8 +122,16 @@ services:
       - |
         set -e
         echo "Installing dependencies..."
-        apk add --no-cache dumb-init
+        apk add --no-cache dumb-init postgresql-client
         npm install -g pnpm@9
+
+        echo "Waiting for PostgreSQL to be ready..."
+        until pg_isready -h postgres -p 5432 -U v2bucket; do
+          echo "PostgreSQL is unavailable - sleeping"
+          sleep 2
+        done
+        echo "PostgreSQL is ready!"
+
         echo "Copying source code..."
         cp -r /build/v2-bucket/* /app/
         echo "Installing packages..."
@@ -150,16 +169,14 @@ services:
         condition: service_healthy
     working_dir: /app
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      <<: *common-variables
       INTERNAL_API_URL: http://api:3000
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
     volumes:
       - build-cache:/build:ro
     networks:
       - v2bucket-network
     ports:
-      - ${WEB_PORT:-3001}:3001
+      - 3001:3001
     entrypoint:
       - /bin/sh
       - -c
