@@ -1,15 +1,15 @@
 // Redis connection management
-import { createClient } from 'redis';
+import { createClient, type RedisClientType } from 'redis';
 import { logger } from './logger.js';
 import { ServiceUnavailableError } from './errors.js';
 
 // Create Redis client
-export const redis = createClient({
+export const redis: RedisClientType = createClient({
   url: process.env.REDIS_URL || 'redis://localhost:6379',
   socket: {
     reconnectStrategy: false, // Disable auto reconnect for now
   },
-});
+}) as RedisClientType;
 
 // Error handling
 redis.on('error', (err) => {

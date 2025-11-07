@@ -222,10 +222,15 @@ export function evaluatePolicy(
 /**
  * Check if principal matches
  */
-function checkPrincipalMatch(policyPrincipal: PolicyPrincipal, principal: string): boolean {
+function checkPrincipalMatch(policyPrincipal: PolicyPrincipal | string, principal: string): boolean {
   // Check for wildcard
-  if (policyPrincipal === '*' || (policyPrincipal as any) === '*') {
+  if (policyPrincipal === '*') {
     return true;
+  }
+
+  // If it's a string, it must be exact match
+  if (typeof policyPrincipal === 'string') {
+    return policyPrincipal === principal;
   }
 
   // Check AWS principals

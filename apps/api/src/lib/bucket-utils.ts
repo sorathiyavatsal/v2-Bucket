@@ -1,5 +1,5 @@
 // Bucket Utility Functions
-import { resolve, join } from 'path';
+import { resolve } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
 /**

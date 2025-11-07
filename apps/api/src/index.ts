@@ -153,7 +153,7 @@ app.get('/', (c) => {
 
 // Test error endpoint (development only)
 if (process.env.NODE_ENV === 'development') {
-  app.get('/test-error', (c) => {
+  app.get('/test-error', (_c) => {
     throw new Error('This is a test error');
   });
 }

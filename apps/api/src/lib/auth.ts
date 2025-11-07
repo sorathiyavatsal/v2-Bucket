@@ -1,6 +1,5 @@
 // Better-Auth Configuration
 import { betterAuth } from 'better-auth';
-import { prisma } from './db.js';
 
 // Define the auth configuration
 export const auth = betterAuth({

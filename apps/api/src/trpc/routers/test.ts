@@ -2,7 +2,7 @@
 import { router, publicProcedure, protectedProcedure } from '../init.js';
 import { z } from 'zod';
 
-export const testRouter = router({
+export const testRouter: ReturnType<typeof router> = router({
   // Public procedure - anyone can call
   hello: publicProcedure
     .input(z.object({ name: z.string().optional() }))
