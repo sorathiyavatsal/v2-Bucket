@@ -1,27 +1,226 @@
-version: '3.8'
+# V2-Bucket Platform - Production Deployment
+# Pull from Git repository and deploy automatically
+version: '3.9'
 
 services:
+  # ============================================
+  # PostgreSQL Database
+  # ============================================
+  postgres:
+    image: postgres:14-alpine
+    container_name: v2bucket-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-v2bucket}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-v2bucket}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - v2bucket-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-v2bucket}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  # ============================================
+  # Redis Cache
+  # ============================================
   redis:
     image: redis:7-alpine
-    container_name: v2-bucket-redis
+    container_name: v2bucket-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
-    command: redis-server --requirepass redis_password
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required} --appendonly yes
     volumes:
       - redis-data:/data
+    networks:
+      - v2bucket-network
     healthcheck:
       test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-    networks:
-      - v2-bucket-network
+      start_period: 10s
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
 
+  # ============================================
+  # Git Cloner & Builder (runs once)
+  # ============================================
+  builder:
+    image: node:20-alpine
+    container_name: v2bucket-builder
+    working_dir: /build
+    environment:
+      - GIT_REPO=${GIT_REPO:?GIT_REPO is required}
+      - GIT_BRANCH=${GIT_BRANCH:-main}
+    volumes:
+      - build-cache:/build
+    networks:
+      - v2bucket-network
+    entrypoint: /bin/sh
+    command: -c "
+      apk add --no-cache git openssh-client &&
+      if [ ! -d /build/v2-bucket/.git ]; then
+        echo 'Cloning repository...' &&
+        git clone --depth 1 --branch $${GIT_BRANCH} $${GIT_REPO} /build/v2-bucket;
+      else
+        echo 'Repository exists, pulling latest...' &&
+        cd /build/v2-bucket &&
+        git pull origin $${GIT_BRANCH};
+      fi &&
+      echo 'Build preparation complete' &&
+      sleep infinity
+      "
+
+  # ============================================
+  # API Server (Fastify + tRPC)
+  # ============================================
+  api:
+    image: node:20-alpine
+    container_name: v2bucket-api
+    restart: unless-stopped
+    depends_on:
+      builder:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    working_dir: /app
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-v2bucket}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-v2bucket}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      STORAGE_PATH: /storage
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+    volumes:
+      - build-cache:/build:ro
+      - storage-data:/storage
+    networks:
+      - v2bucket-network
+    ports:
+      - "${API_PORT:-3000}:3000"
+    entrypoint: /bin/sh
+    command: -c "
+      echo 'Installing dependencies...' &&
+      apk add --no-cache dumb-init &&
+      npm install -g pnpm@9 &&
+
+      echo 'Copying source code...' &&
+      cp -r /build/v2-bucket/* /app/ &&
+
+      echo 'Installing packages...' &&
+      cd /app &&
+      pnpm install --frozen-lockfile &&
+
+      echo 'Generating Prisma client...' &&
+      cd /app/packages/database &&
+      pnpm prisma generate &&
+
+      echo 'Building API...' &&
+      cd /app/apps/api &&
+      pnpm build &&
+
+      echo 'Running migrations...' &&
+      cd /app/packages/database &&
+      pnpm prisma migrate deploy &&
+
+      echo 'Starting API server...' &&
+      cd /app/apps/api &&
+      exec dumb-init node dist/index.js
+      "
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # ============================================
+  # Web UI (Next.js)
+  # ============================================
+  web:
+    image: node:20-alpine
+    container_name: v2bucket-web
+    restart: unless-stopped
+    depends_on:
+      builder:
+        condition: service_started
+      api:
+        condition: service_healthy
+    working_dir: /app
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+    volumes:
+      - build-cache:/build:ro
+    networks:
+      - v2bucket-network
+    ports:
+      - "${WEB_PORT:-3001}:3001"
+    entrypoint: /bin/sh
+    command: -c "
+      echo 'Installing dependencies...' &&
+      apk add --no-cache dumb-init &&
+      npm install -g pnpm@9 &&
+
+      echo 'Copying source code...' &&
+      cp -r /build/v2-bucket/* /app/ &&
+
+      echo 'Installing packages...' &&
+      cd /app &&
+      pnpm install --frozen-lockfile &&
+
+      echo 'Generating Prisma client...' &&
+      cd /app/packages/database &&
+      pnpm prisma generate &&
+
+      echo 'Building Web UI...' &&
+      cd /app/apps/web &&
+      pnpm build &&
+
+      echo 'Starting Web UI...' &&
+      exec dumb-init node .next/standalone/apps/web/server.js
+      "
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+# ============================================
+# Persistent Volumes
+# ============================================
 volumes:
+  postgres-data:
+    driver: local
+    name: v2bucket-postgres-data
   redis-data:
     driver: local
+    name: v2bucket-redis-data
+  storage-data:
+    driver: local
+    name: v2bucket-storage-data
+  build-cache:
+    driver: local
+    name: v2bucket-build-cache
 
+# ============================================
+# Networks
+# ============================================
 networks:
-  v2-bucket-network:
+  v2bucket-network:
     driver: bridge
+    name: v2bucket-network
