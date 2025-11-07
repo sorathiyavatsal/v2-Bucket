@@ -27,6 +27,11 @@ nano .env  # or use any text editor
 
 **Required changes:**
 ```env
+# Your GitHub repository URL
+GIT_REPO=https://github.com/yourusername/v2-bucket.git
+GIT_BRANCH=main
+
+# Strong passwords and secrets
 POSTGRES_PASSWORD=your-strong-password-here
 REDIS_PASSWORD=your-strong-password-here
 JWT_SECRET=your-random-32-char-secret
@@ -42,27 +47,12 @@ openssl rand -base64 32
 [Convert]::ToBase64String((1..32|%{Get-Random -Min 0 -Max 256}))
 ```
 
-### Step 2: Deploy with Script (Recommended)
+### Step 2: Deploy with Docker Compose
 
 ```bash
-# Make script executable (Linux/Mac/NAS)
-chmod +x deploy.sh
+# Upload only docker-compose.yml and .env files to your NAS
+# No need to upload source code - Docker will pull from Git!
 
-# Run automated deployment
-./deploy.sh
-```
-
-The script will:
-- Check prerequisites
-- Validate configuration
-- Build Docker images
-- Start all services
-- Run health checks
-- Display access information
-
-**Or deploy manually:**
-
-```bash
 # Start all services
 docker-compose up -d
 
@@ -72,6 +62,14 @@ docker-compose ps
 # View logs
 docker-compose logs -f
 ```
+
+Docker Compose will:
+- Clone your repository from GitHub
+- Start PostgreSQL and Redis
+- Install dependencies
+- Build API and Web services
+- Run database migrations
+- Start all services
 
 ### Step 3: Access Your Platform
 

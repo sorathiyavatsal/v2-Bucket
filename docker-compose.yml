@@ -118,13 +118,13 @@ services:
       echo 'Copying source code...' &&
       cp -r /build/v2-bucket/* /app/ &&
 
-      echo 'Installing packages...' &&
+      echo 'Installing packages (with dev dependencies for build)...' &&
       cd /app &&
-      pnpm install --frozen-lockfile &&
+      NODE_ENV=development pnpm install --frozen-lockfile &&
 
       echo 'Generating Prisma client...' &&
       cd /app/packages/database &&
-      pnpm prisma generate &&
+      pnpm exec prisma generate &&
 
       echo 'Building API...' &&
       cd /app/apps/api &&
@@ -132,11 +132,11 @@ services:
 
       echo 'Running migrations...' &&
       cd /app/packages/database &&
-      pnpm prisma migrate deploy &&
+      pnpm exec prisma migrate deploy &&
 
       echo 'Starting API server...' &&
       cd /app/apps/api &&
-      exec dumb-init node dist/index.js
+      NODE_ENV=production exec dumb-init node dist/index.js
       "
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
@@ -178,13 +178,13 @@ services:
       echo 'Copying source code...' &&
       cp -r /build/v2-bucket/* /app/ &&
 
-      echo 'Installing packages...' &&
+      echo 'Installing packages (with dev dependencies for build)...' &&
       cd /app &&
-      pnpm install --frozen-lockfile &&
+      NODE_ENV=development pnpm install --frozen-lockfile &&
 
       echo 'Generating Prisma client...' &&
       cd /app/packages/database &&
-      pnpm prisma generate &&
+      pnpm exec prisma generate &&
 
       echo 'Building Web UI...' &&
       cd /app/apps/web &&
