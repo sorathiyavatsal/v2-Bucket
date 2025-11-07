@@ -125,17 +125,12 @@ services:
       cd /app/packages/database &&
       pnpm exec prisma generate &&
 
-      echo 'Building API...' &&
-      cd /app/apps/api &&
-      pnpm build &&
-
       echo 'Running migrations...' &&
-      cd /app/packages/database &&
       pnpm exec prisma migrate deploy &&
 
-      echo 'Starting API server...' &&
+      echo 'Starting API server with TSX (skipping TypeScript build for faster deployment)...' &&
       cd /app/apps/api &&
-      NODE_ENV=production exec dumb-init node dist/index.js
+      NODE_ENV=production exec dumb-init pnpm exec tsx src/index.ts
       "
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]

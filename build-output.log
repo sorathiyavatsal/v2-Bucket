@@ -1,0 +1,200 @@
+
+> v2-bucket@1.0.0 build C:\Project\CineMaxPlaza\Synology S3 Bucket\v2-bucket
+> turbo build
+
+turbo 2.6.0
+
+• Packages in scope: @repo/api, @repo/config, @repo/database, @repo/shared, @v2-bucket/web
+• Running build in 5 packages
+• Remote caching disabled
+@v2-bucket/web:build: cache miss, executing 10ed1902248a85c1
+@repo/api:build: cache miss, executing 7cc317552aa5c5da
+@v2-bucket/web:build: 
+@repo/api:build: 
+@repo/api:build: > @repo/api@0.0.0 build C:\Project\CineMaxPlaza\Synology S3 Bucket\v2-bucket\apps\api
+@v2-bucket/web:build: > @v2-bucket/web@1.0.0 build C:\Project\CineMaxPlaza\Synology S3 Bucket\v2-bucket\apps\web
+@v2-bucket/web:build: > next build
+@repo/api:build: > tsc
+@v2-bucket/web:build: 
+@repo/api:build: 
+@v2-bucket/web:build:    ▲ Next.js 15.5.6
+@v2-bucket/web:build:    - Experiments (use with caution):
+@v2-bucket/web:build:      · serverActions
+@v2-bucket/web:build: 
+@v2-bucket/web:build:    Creating an optimized production build ...
+@repo/api:build: src/middleware/error-handler.ts(34,8): error TS2769: No overload matches this call.
+@repo/api:build:   Overload 1 of 2, '(object: { details?: unknown; error: string; code: string; message: string; }, status?: ContentfulStatusCode, headers?: HeaderRecord): JSONRespondReturn<{ details?: unknown; error: string; code: string; message: string; }, ContentfulStatusCode>', gave the following error.
+@repo/api:build:     Argument of type 'number' is not assignable to parameter of type 'ContentfulStatusCode'.
+@repo/api:build:   Overload 2 of 2, '(object: { details?: unknown; error: string; code: string; message: string; }, init?: ResponseOrInit<ContentfulStatusCode>): JSONRespondReturn<{ details?: unknown; error: string; code: string; message: string; }, ContentfulStatusCode>', gave the following error.
+@repo/api:build:     Argument of type 'number' is not assignable to parameter of type 'ResponseOrInit<ContentfulStatusCode>'.
+@repo/api:build: src/middleware/rate-limit.ts(85,18): error TS2769: No overload matches this call.
+@repo/api:build:   Overload 1 of 2, '(key: never): never', gave the following error.
+@repo/api:build:     Argument of type '"clientIp"' is not assignable to parameter of type 'never'.
+@repo/api:build:   Overload 2 of 2, '(key: "secureHeadersNonce"): string', gave the following error.
+@repo/api:build:     Argument of type '"clientIp"' is not assignable to parameter of type '"secureHeadersNonce"'.
+@repo/api:build: src/middleware/rate-limit.ts(90,3): error TS2739: Type '{ increment(key: string): Promise<{ totalHits: number; resetTime: Date; }>; }' is missing the following properties from type 'Store<Env, string, Input>': decrement, resetKey
+@repo/api:build: src/middleware/rate-limit.ts(106,18): error TS2769: No overload matches this call.
+@repo/api:build:   Overload 1 of 2, '(key: never): never', gave the following error.
+@repo/api:build:     Argument of type '"clientIp"' is not assignable to parameter of type 'never'.
+@repo/api:build:   Overload 2 of 2, '(key: "secureHeadersNonce"): string', gave the following error.
+@repo/api:build:     Argument of type '"clientIp"' is not assignable to parameter of type '"secureHeadersNonce"'.
+@repo/api:build: src/middleware/rate-limit.ts(111,3): error TS2739: Type '{ increment(key: string): Promise<{ totalHits: number; resetTime: Date; }>; }' is missing the following properties from type 'Store<Env, string, Input>': decrement, resetKey
+@repo/api:build: src/middleware/rate-limit.ts(127,18): error TS2769: No overload matches this call.
+@repo/api:build:   Overload 1 of 2, '(key: never): never', gave the following error.
+@repo/api:build:     Argument of type '"clientIp"' is not assignable to parameter of type 'never'.
+@repo/api:build:   Overload 2 of 2, '(key: "secureHeadersNonce"): string', gave the following error.
+@repo/api:build:     Argument of type '"clientIp"' is not assignable to parameter of type '"secureHeadersNonce"'.
+@repo/api:build: src/middleware/rate-limit.ts(132,3): error TS2739: Type '{ increment(key: string): Promise<{ totalHits: number; resetTime: Date; }>; }' is missing the following properties from type 'Store<Env, string, Input>': decrement, resetKey
+@repo/api:build: src/middleware/s3-auth.ts(5,10): error TS2305: Module '"../lib/access-keys.js"' has no exported member 'verifySecretKey'.
+@repo/api:build: src/routes/s3-bucket.ts(101,9): error TS2353: Object literal may only specify known properties, and 'policy' does not exist in type 'BucketInclude<DefaultArgs>'.
+@repo/api:build: src/routes/s3-bucket.ts(163,50): error TS2339: Property 'policyDocument' does not exist on type 'string | number | true | JsonObject | JsonArray'.
+@repo/api:build:   Property 'policyDocument' does not exist on type 'string'.
+@repo/api:build: src/routes/s3-bucket.ts(168,19): error TS2339: Property 'corsConfiguration' does not exist on type '{ name: string; id: string; createdAt: Date; updatedAt: Date; userId: string; region: string; volumePath: string; storageClass: string; versioningEnabled: boolean; mfaDelete: boolean; ... 11 more ...; totalSize: bigint; }'.
+@repo/api:build: src/routes/s3-bucket.ts(178,40): error TS2339: Property 'corsConfiguration' does not exist on type '{ name: string; id: string; createdAt: Date; updatedAt: Date; userId: string; region: string; volumePath: string; storageClass: string; versioningEnabled: boolean; mfaDelete: boolean; ... 11 more ...; totalSize: bigint; }'.
+@repo/api:build: src/routes/s3-bucket.ts(183,31): error TS2339: Property 'rules' does not exist on type 'CORSConfiguration'.
+@repo/api:build: src/routes/s3-bucket.ts(488,23): error TS2769: No overload matches this call.
+@repo/api:build:   Overload 1 of 2, '(text: "", status?: ContentfulStatusCode, headers?: HeaderRecord): Response & TypedResponse<"", ContentfulStatusCode, "text">', gave the following error.
+@repo/api:build:     Argument of type '204' is not assignable to parameter of type 'ContentfulStatusCode'.
+@repo/api:build:   Overload 2 of 2, '(text: "", init?: ResponseOrInit<ContentfulStatusCode>): Response & TypedResponse<"", ContentfulStatusCode, "text">', gave the following error.
+@repo/api:build:     Argument of type 'number' is not assignable to parameter of type 'ResponseOrInit<ContentfulStatusCode>'.
+@repo/api:build: src/routes/s3-multipart.ts(290,75): error TS2554: Expected 3 arguments, but got 4.
+@repo/api:build: src/routes/s3-multipart.ts(315,33): error TS2339: Property 'md5Hash' does not exist on type '{ size: number; etag: string; }'.
+@repo/api:build: src/routes/s3-multipart.ts(320,33): error TS2339: Property 'md5Hash' does not exist on type '{ size: number; etag: string; }'.
+@repo/api:build: src/routes/s3-multipart.ts(321,13): error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type '(Without<MultipartPartUpdateInput, MultipartPartUncheckedUpdateInput> & MultipartPartUncheckedUpdateInput) | (Without<...> & MultipartPartUpdateInput)'.
+@repo/api:build: src/routes/s3-multipart.ts(426,40): error TS2345: Argument of type '{ partNumber: number; etag: string; }[]' is not assignable to parameter of type 'string'.
+@repo/api:build: src/routes/s3-multipart.ts(431,25): error TS2339: Property 'valid' does not exist on type 'Promise<boolean>'.
+@repo/api:build: src/routes/s3-multipart.ts(434,24): error TS2339: Property 'error' does not exist on type 'Promise<boolean>'.
+@repo/api:build: src/routes/s3-multipart.ts(443,59): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number[]'.
+@repo/api:build: src/routes/s3-multipart.ts(451,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-multipart.ts(468,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-multipart.ts(473,9): error TS2322: Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: any; storageClass: string; metadata: JsonValue; versionId: string; }' is not assignable to type '(Without<ObjectCreateInput, ObjectUncheckedCreateInput> & ObjectUncheckedCreateInput) | (Without<...> & ObjectCreateInput)'.
+@repo/api:build:   Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: any; storageClass: string; metadata: JsonValue; versionId: string; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput> & ObjectCreateInput'.
+@repo/api:build:     Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: any; storageClass: string; metadata: JsonValue; versionId: string; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput>'.
+@repo/api:build:       Types of property 'bucketId' are incompatible.
+@repo/api:build:         Type 'string' is not assignable to type 'never'.
+@repo/api:build: src/routes/s3-multipart.ts(479,35): error TS2339: Property 'md5Hash' does not exist on type '{ size: number; etag: string; }'.
+@repo/api:build: src/routes/s3-multipart.ts(488,35): error TS2339: Property 'md5Hash' does not exist on type '{ size: number; etag: string; }'.
+@repo/api:build: src/routes/s3-multipart.ts(562,25): error TS2769: No overload matches this call.
+@repo/api:build:   Overload 1 of 2, '(text: "", status?: ContentfulStatusCode, headers?: HeaderRecord): Response & TypedResponse<"", ContentfulStatusCode, "text">', gave the following error.
+@repo/api:build:     Argument of type '204' is not assignable to parameter of type 'ContentfulStatusCode'.
+@repo/api:build:   Overload 2 of 2, '(text: "", init?: ResponseOrInit<ContentfulStatusCode>): Response & TypedResponse<"", ContentfulStatusCode, "text">', gave the following error.
+@repo/api:build:     Argument of type 'number' is not assignable to parameter of type 'ResponseOrInit<ContentfulStatusCode>'.
+@repo/api:build: src/routes/s3-multipart.ts(591,27): error TS2339: Property 'updatedAt' does not exist on type '{ id: string; size: bigint; etag: string; md5Hash: string; uploadId: string; partNumber: number; uploadedAt: Date; }'.
+@repo/api:build: src/routes/s3-object.ts(83,9): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-object.ts(161,9): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-object.ts(301,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-object.ts(327,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-object.ts(344,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-object.ts(349,9): error TS2322: Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: JsonValue; versionId: string; updatedAt: Date; }' is not assignable to type '(Without<ObjectCreateInput, ObjectUncheckedCreateInput> & ObjectUncheckedCreateInput) | (Without<...> & ObjectCreateInput)'.
+@repo/api:build:   Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: JsonValue; versionId: string; updatedAt: Date; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput> & ObjectCreateInput'.
+@repo/api:build:     Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: JsonValue; versionId: string; updatedAt: Date; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput>'.
+@repo/api:build:       Types of property 'bucketId' are incompatible.
+@repo/api:build:         Type 'string' is not assignable to type 'never'.
+@repo/api:build: src/routes/s3-object.ts(447,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-object.ts(464,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-object.ts(469,9): error TS2322: Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: Record<string, string>; versionId: string; }' is not assignable to type '(Without<ObjectCreateInput, ObjectUncheckedCreateInput> & ObjectUncheckedCreateInput) | (Without<...> & ObjectCreateInput)'.
+@repo/api:build:   Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: Record<string, string>; versionId: string; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput> & ObjectCreateInput'.
+@repo/api:build:     Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: Record<string, string>; versionId: string; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput>'.
+@repo/api:build:       Types of property 'bucketId' are incompatible.
+@repo/api:build:         Type 'string' is not assignable to type 'never'.
+@repo/api:build: src/routes/s3-object.ts(585,9): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-object.ts(594,25): error TS2769: No overload matches this call.
+@repo/api:build:   Overload 1 of 2, '(text: "", status?: ContentfulStatusCode, headers?: HeaderRecord): Response & TypedResponse<"", ContentfulStatusCode, "text">', gave the following error.
+@repo/api:build:     Argument of type '204' is not assignable to parameter of type 'ContentfulStatusCode'.
+@repo/api:build:   Overload 2 of 2, '(text: "", init?: ResponseOrInit<ContentfulStatusCode>): Response & TypedResponse<"", ContentfulStatusCode, "text">', gave the following error.
+@repo/api:build:     Argument of type 'number' is not assignable to parameter of type 'ResponseOrInit<ContentfulStatusCode>'.
+@repo/api:build: src/routes/s3-object.ts(604,9): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/routes/s3-object.ts(631,23): error TS2769: No overload matches this call.
+@repo/api:build:   Overload 1 of 2, '(text: "", status?: ContentfulStatusCode, headers?: HeaderRecord): Response & TypedResponse<"", ContentfulStatusCode, "text">', gave the following error.
+@repo/api:build:     Argument of type '204' is not assignable to parameter of type 'ContentfulStatusCode'.
+@repo/api:build:   Overload 2 of 2, '(text: "", init?: ResponseOrInit<ContentfulStatusCode>): Response & TypedResponse<"", ContentfulStatusCode, "text">', gave the following error.
+@repo/api:build:     Argument of type 'number' is not assignable to parameter of type 'ResponseOrInit<ContentfulStatusCode>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(36,20): error TS2353: Object literal may only specify known properties, and 'policy' does not exist in type 'BucketInclude<DefaultArgs>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(53,51): error TS2339: Property 'policyDocument' does not exist on type 'string | number | true | JsonObject | JsonArray'.
+@repo/api:build:   Property 'policyDocument' does not exist on type 'string'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(58,35): error TS2339: Property 'policyDocument' does not exist on type 'string | number | true | JsonObject | JsonArray'.
+@repo/api:build:   Property 'policyDocument' does not exist on type 'string'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(59,34): error TS2339: Property 'createdAt' does not exist on type 'string | number | true | JsonObject | JsonArray'.
+@repo/api:build:   Property 'createdAt' does not exist on type 'string'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(60,34): error TS2339: Property 'updatedAt' does not exist on type 'string | number | true | JsonObject | JsonArray'.
+@repo/api:build:   Property 'updatedAt' does not exist on type 'string'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(96,20): error TS2339: Property 'bucketPolicy' does not exist on type 'PrismaClient<PrismaClientOptions, LogLevel, DefaultArgs>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(138,20): error TS2339: Property 'bucketPolicy' does not exist on type 'PrismaClient<PrismaClientOptions, LogLevel, DefaultArgs>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(175,20): error TS2339: Property 'bucketPolicy' does not exist on type 'PrismaClient<PrismaClientOptions, LogLevel, DefaultArgs>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(221,20): error TS2339: Property 'bucketPolicy' does not exist on type 'PrismaClient<PrismaClientOptions, LogLevel, DefaultArgs>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(255,20): error TS2353: Object literal may only specify known properties, and 'corsConfiguration' does not exist in type 'BucketInclude<DefaultArgs>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(265,19): error TS2339: Property 'corsConfiguration' does not exist on type '{ name: string; id: string; createdAt: Date; updatedAt: Date; userId: string; region: string; volumePath: string; storageClass: string; versioningEnabled: boolean; mfaDelete: boolean; ... 11 more ...; totalSize: bigint; }'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(272,40): error TS2339: Property 'corsConfiguration' does not exist on type '{ name: string; id: string; createdAt: Date; updatedAt: Date; userId: string; region: string; volumePath: string; storageClass: string; versioningEnabled: boolean; mfaDelete: boolean; ... 11 more ...; totalSize: bigint; }'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(277,26): error TS2339: Property 'corsConfiguration' does not exist on type '{ name: string; id: string; createdAt: Date; updatedAt: Date; userId: string; region: string; volumePath: string; storageClass: string; versioningEnabled: boolean; mfaDelete: boolean; ... 11 more ...; totalSize: bigint; }'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(278,27): error TS2339: Property 'corsConfiguration' does not exist on type '{ name: string; id: string; createdAt: Date; updatedAt: Date; userId: string; region: string; volumePath: string; storageClass: string; versioningEnabled: boolean; mfaDelete: boolean; ... 11 more ...; totalSize: bigint; }'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(279,27): error TS2339: Property 'corsConfiguration' does not exist on type '{ name: string; id: string; createdAt: Date; updatedAt: Date; userId: string; region: string; volumePath: string; storageClass: string; versioningEnabled: boolean; mfaDelete: boolean; ... 11 more ...; totalSize: bigint; }'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(315,20): error TS2339: Property 'bucketCorsConfiguration' does not exist on type 'PrismaClient<PrismaClientOptions, LogLevel, DefaultArgs>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(357,20): error TS2339: Property 'bucketCorsConfiguration' does not exist on type 'PrismaClient<PrismaClientOptions, LogLevel, DefaultArgs>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(394,20): error TS2339: Property 'bucketCorsConfiguration' does not exist on type 'PrismaClient<PrismaClientOptions, LogLevel, DefaultArgs>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(429,11): error TS2353: Object literal may only specify known properties, and 'policy' does not exist in type 'BucketInclude<DefaultArgs>'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(444,27): error TS2339: Property 'corsConfiguration' does not exist on type '{ name: string; id: string; createdAt: Date; updatedAt: Date; userId: string; region: string; volumePath: string; storageClass: string; versioningEnabled: boolean; mfaDelete: boolean; ... 11 more ...; totalSize: bigint; }'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(445,41): error TS2339: Property 'updatedAt' does not exist on type 'JsonValue'.
+@repo/api:build:   Property 'updatedAt' does not exist on type 'string'.
+@repo/api:build: src/trpc/routers/bucket-policy.ts(446,31): error TS2339: Property 'corsConfiguration' does not exist on type '{ name: string; id: string; createdAt: Date; updatedAt: Date; userId: string; region: string; volumePath: string; storageClass: string; versioningEnabled: boolean; mfaDelete: boolean; ... 11 more ...; totalSize: bigint; }'.
+@repo/api:build: src/trpc/routers/bucket.ts(29,22): error TS2352: Conversion of type 'readonly ["us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1", "eu-west-2", "eu-central-1", "ap-south-1", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1", "ap-northeast-2"]' to type '[string, ...string[]]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+@repo/api:build:   The type 'readonly ["us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1", "eu-west-2", "eu-central-1", "ap-south-1", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1", "ap-northeast-2"]' is 'readonly' and cannot be assigned to the mutable type '[string, ...string[]]'.
+@repo/api:build: src/trpc/routers/bucket.ts(30,28): error TS2352: Conversion of type 'readonly ["STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER", "DEEP_ARCHIVE"]' to type '[string, ...string[]]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+@repo/api:build:   The type 'readonly ["STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER", "DEEP_ARCHIVE"]' is 'readonly' and cannot be assigned to the mutable type '[string, ...string[]]'.
+@repo/api:build: src/trpc/routers/bucket.ts(31,19): error TS2352: Conversion of type 'readonly ["private", "public-read", "public-read-write", "authenticated-read"]' to type '[string, ...string[]]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+@repo/api:build:   The type 'readonly ["private", "public-read", "public-read-write", "authenticated-read"]' is 'readonly' and cannot be assigned to the mutable type '[string, ...string[]]'.
+@repo/api:build: src/trpc/routers/bucket.ts(228,19): error TS2352: Conversion of type 'readonly ["private", "public-read", "public-read-write", "authenticated-read"]' to type '[string, ...string[]]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+@repo/api:build:   The type 'readonly ["private", "public-read", "public-read-write", "authenticated-read"]' is 'readonly' and cannot be assigned to the mutable type '[string, ...string[]]'.
+@repo/api:build: src/trpc/routers/multipart.ts(70,9): error TS2322: Type '{ uploadId: string; bucketId: string; objectKey: string; contentType: string; metadata: Record<string, string>; storageClass: string; userId: string; }' is not assignable to type '(Without<MultipartUploadCreateInput, MultipartUploadUncheckedCreateInput> & MultipartUploadUncheckedCreateInput) | (Without<...> & MultipartUploadCreateInput)'.
+@repo/api:build:   Type '{ uploadId: string; bucketId: string; objectKey: string; contentType: string; metadata: Record<string, string>; storageClass: string; userId: string; }' is not assignable to type 'Without<MultipartUploadUncheckedCreateInput, MultipartUploadCreateInput> & MultipartUploadCreateInput'.
+@repo/api:build:     Type '{ uploadId: string; bucketId: string; objectKey: string; contentType: string; metadata: Record<string, string>; storageClass: string; userId: string; }' is not assignable to type 'Without<MultipartUploadUncheckedCreateInput, MultipartUploadCreateInput>'.
+@repo/api:build:       Types of property 'bucketId' are incompatible.
+@repo/api:build:         Type 'string' is not assignable to type 'never'.
+@repo/api:build: src/trpc/routers/multipart.ts(166,35): error TS2551: Property 'multipartUploadPart' does not exist on type 'PrismaClient<PrismaClientOptions, LogLevel, DefaultArgs>'. Did you mean 'multipartUpload'?
+@repo/api:build: src/trpc/routers/multipart.ts(302,13): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/multipart.ts(314,13): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/multipart.ts(319,11): error TS2322: Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: JsonValue; }' is not assignable to type '(Without<ObjectCreateInput, ObjectUncheckedCreateInput> & ObjectUncheckedCreateInput) | (Without<...> & ObjectCreateInput)'.
+@repo/api:build:   Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: JsonValue; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput> & ObjectCreateInput'.
+@repo/api:build:     Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: JsonValue; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput>'.
+@repo/api:build:       Types of property 'bucketId' are incompatible.
+@repo/api:build:         Type 'string' is not assignable to type 'never'.
+@repo/api:build: src/trpc/routers/multipart.ts(445,13): error TS2353: Object literal may only specify known properties, and 'abortedAt' does not exist in type '(Without<MultipartUploadUpdateInput, MultipartUploadUncheckedUpdateInput> & MultipartUploadUncheckedUpdateInput) | (Without<...> & MultipartUploadUpdateInput)'.
+@repo/api:build: src/trpc/routers/multipart.ts(503,34): error TS2551: Property 'multipartUploadPart' does not exist on type 'PrismaClient<PrismaClientOptions, LogLevel, DefaultArgs>'. Did you mean 'multipartUpload'?
+@repo/api:build: src/trpc/routers/object.ts(90,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/object.ts(115,13): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/object.ts(120,11): error TS2322: Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: Record<string, string>; versionId: string; }' is not assignable to type '(Without<ObjectCreateInput, ObjectUncheckedCreateInput> & ObjectUncheckedCreateInput) | (Without<...> & ObjectCreateInput)'.
+@repo/api:build:   Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: Record<string, string>; versionId: string; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput> & ObjectCreateInput'.
+@repo/api:build:     Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: Record<string, string>; versionId: string; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput>'.
+@repo/api:build:       Types of property 'bucketId' are incompatible.
+@repo/api:build:         Type 'string' is not assignable to type 'never'.
+@repo/api:build: src/trpc/routers/object.ts(216,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/object.ts(369,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/object.ts(392,15): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/object.ts(399,15): error TS2353: Object literal may only specify known properties, and 'deletedAt' does not exist in type '(Without<ObjectUpdateInput, ObjectUncheckedUpdateInput> & ObjectUncheckedUpdateInput) | (Without<...> & ObjectUpdateInput)'.
+@repo/api:build: src/trpc/routers/object.ts(405,15): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/object.ts(475,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/object.ts(491,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/object.ts(571,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/object.ts(593,11): error TS2322: Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: JsonValue; }' is not assignable to type '(Without<ObjectCreateInput, ObjectUncheckedCreateInput> & ObjectUncheckedCreateInput) | (Without<...> & ObjectCreateInput)'.
+@repo/api:build:   Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: JsonValue; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput> & ObjectCreateInput'.
+@repo/api:build:     Type '{ bucketId: string; key: string; size: bigint; contentType: string; etag: string; md5Hash: string; storageClass: string; metadata: JsonValue; }' is not assignable to type 'Without<ObjectUncheckedCreateInput, ObjectCreateInput>'.
+@repo/api:build:       Types of property 'bucketId' are incompatible.
+@repo/api:build:         Type 'string' is not assignable to type 'never'.
+@repo/api:build: src/trpc/routers/presigned-url.ts(66,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/presigned-url.ts(112,11): error TS2353: Object literal may only specify known properties, and 'token' does not exist in type '(Without<PresignedUrlCreateInput, PresignedUrlUncheckedCreateInput> & PresignedUrlUncheckedCreateInput) | (Without<...> & PresignedUrlCreateInput)'.
+@repo/api:build: src/trpc/routers/presigned-url.ts(208,11): error TS2353: Object literal may only specify known properties, and 'token' does not exist in type '(Without<PresignedUrlCreateInput, PresignedUrlUncheckedCreateInput> & PresignedUrlUncheckedCreateInput) | (Without<...> & PresignedUrlCreateInput)'.
+@repo/api:build: src/trpc/routers/presigned-url.ts(275,11): error TS2561: Object literal may only specify known properties, but 'bucketId_key' does not exist in type 'ObjectWhereUniqueInput'. Did you mean to write 'bucketId'?
+@repo/api:build: src/trpc/routers/presigned-url.ts(321,11): error TS2353: Object literal may only specify known properties, and 'token' does not exist in type '(Without<PresignedUrlCreateInput, PresignedUrlUncheckedCreateInput> & PresignedUrlUncheckedCreateInput) | (Without<...> & PresignedUrlCreateInput)'.
+@repo/api:build: src/trpc/routers/presigned-url.ts(379,9): error TS2322: Type '{ bucket: { select: { name: true; }; }; }' is not assignable to type 'never'.
+@repo/api:build: src/trpc/routers/presigned-url.ts(392,34): error TS2339: Property 'name' does not exist on type 'never'.
+@repo/api:build: src/trpc/routers/presigned-url.ts(427,11): error TS2353: Object literal may only specify known properties, and 'revokedAt' does not exist in type '(Without<PresignedUrlUpdateInput, PresignedUrlUncheckedUpdateInput> & PresignedUrlUncheckedUpdateInput) | (Without<...> & PresignedUrlUpdateInput)'.
+@repo/api:build:  ELIFECYCLE  Command failed with exit code 2.
+@repo/api:build: ERROR: command finished with error: command (C:\Project\CineMaxPlaza\Synology S3 Bucket\v2-bucket\apps\api) C:\nvm4w\nodejs\pnpm.CMD run build exited (2)
+@repo/api#build: command (C:\Project\CineMaxPlaza\Synology S3 Bucket\v2-bucket\apps\api) C:\nvm4w\nodejs\pnpm.CMD run build exited (2)
+
+ Tasks:    0 successful, 2 total
+Cached:    0 cached, 2 total
+  Time:    9.099s 
+Failed:    @repo/api#build
+
+ ERROR  run failed: command  exited (2)
+ ELIFECYCLE  Command failed with exit code 2.

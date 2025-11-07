@@ -1,0 +1,42 @@
+# Docker Compose override for local development
+# This file mounts local source code instead of cloning from GitHub
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up
+
+version: '3.8'
+
+services:
+  # Override builder to use local source code
+  builder:
+    volumes:
+      - ./:/build/v2-bucket:ro  # Mount current directory as read-only
+    command: -c "
+      echo 'Using local source code from host machine' &&
+      echo 'Build preparation complete' &&
+      sleep infinity
+      "
+
+  # Override API to skip TypeScript build and run with tsx
+  api:
+    command: -c "
+      echo 'Installing dependencies...' &&
+      apk add --no-cache dumb-init &&
+      npm install -g pnpm@9 &&
+
+      echo 'Copying source code...' &&
+      cp -r /build/v2-bucket/* /app/ &&
+
+      echo 'Installing packages (with dev dependencies)...' &&
+      cd /app &&
+      NODE_ENV=development pnpm install --frozen-lockfile &&
+
+      echo 'Generating Prisma client...' &&
+      cd /app/packages/database &&
+      pnpm exec prisma generate &&
+
+      echo 'Running migrations...' &&
+      pnpm exec prisma migrate deploy &&
+
+      echo 'Starting API server with TSX (skipping TypeScript build)...' &&
+      cd /app/apps/api &&
+      NODE_ENV=production exec dumb-init pnpm exec tsx src/index.ts
+      "

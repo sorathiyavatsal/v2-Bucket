@@ -200,6 +200,7 @@ model Bucket {
   accessPoints  AccessPoint[]
   webhooks      Webhook[]
   tasks         Task[]
+  multipartUploads MultipartUpload[]
 
   @@index([userId])
   @@index([name])
@@ -216,6 +217,7 @@ model Object {
   versionId     String?  // For versioning
   isLatest      Boolean  @default(true)
   isDeleteMarker Boolean @default(false)
+  isDeleted     Boolean  @default(false) // Soft delete flag
 
   // File Info
   size          BigInt
@@ -228,12 +230,14 @@ model Object {
   physicalPath  String   // Actual file path on disk
 
   // Metadata
+  metadata      Json?    // Combined metadata for compatibility
   userMetadata  Json?    // User-defined metadata (x-amz-meta-*)
   systemMetadata Json?   // System metadata
 
   // Timestamps
   lastModified  DateTime @default(now())
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Relations
   bucket        Bucket   @relation(fields: [bucketId], references: [id], onDelete: Cascade)
@@ -253,9 +257,14 @@ model MultipartUpload {
   uploadId      String   @unique
   bucketId      String
   key           String
+  objectKey     String   // Alias for key for compatibility
+  userId        String?  // User who initiated the upload
+  storageClass  String   @default("STANDARD")
 
   // State
   status        String   @default("initiated") // initiated, completed, aborted
+  isCompleted   Boolean  @default(false)
+  isAborted     Boolean  @default(false)
 
   // Metadata
   contentType   String?
@@ -263,10 +272,12 @@ model MultipartUpload {
 
   // Timestamps
   initiatedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
   completedAt   DateTime?
 
   // Relations
   parts         MultipartPart[]
+  bucket        Bucket   @relation(fields: [bucketId], references: [id], onDelete: Cascade)
 
   @@index([bucketId, key])
   @@index([uploadId])
@@ -277,6 +288,7 @@ model MultipartPart {
   uploadId      String
   partNumber    Int
   etag          String
+  md5Hash       String?  // MD5 hash of the part
   size          BigInt
   uploadedAt    DateTime @default(now())
 
@@ -482,13 +494,17 @@ model AuditLog {
 model PresignedUrl {
   id            String   @id @default(cuid())
   bucketName    String
+  bucketId      String?  // Optional bucket ID
   objectKey     String
   operation     String   // GET, PUT
   signature     String
+  userId        String?  // User who created the URL
   expiresAt     DateTime
   createdAt     DateTime @default(now())
   usedAt        DateTime?
+  lastUsedAt    DateTime? // Last time URL was used
   usedCount     Int      @default(0)
+  isRevoked     Boolean  @default(false) // Can be revoked
 
   @@index([signature])
   @@index([expiresAt])

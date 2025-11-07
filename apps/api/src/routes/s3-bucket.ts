@@ -1,5 +1,6 @@
 // S3 Bucket API Routes
 import { Hono } from 'hono';
+import type { AppEnv } from '../types/hono.js';
 import { prisma } from '../lib/db.js';
 import { logger } from '../lib/logger.js';
 import { s3AuthMiddleware } from '../middleware/s3-auth.js';
@@ -15,10 +16,10 @@ import {
   generateBucketPath,
   ensureBucketDirectory,
 } from '../lib/bucket-utils.js';
-import { policyToJSON, policyFromJSON } from '../lib/bucket-policy.js';
-import { corsToJSON, corsFromJSON } from '../lib/bucket-policy.js';
+import { policyFromJSON } from '../lib/bucket-policy.js';
+import { corsFromJSON } from '../lib/bucket-policy.js';
 
-const app = new Hono();
+const app = new Hono<AppEnv>();
 
 /**
  * List all buckets - GET /

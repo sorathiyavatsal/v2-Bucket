@@ -1,5 +1,6 @@
 // S3 Multipart Upload API Routes
 import { Hono } from 'hono';
+import type { AppEnv } from '../types/hono.js';
 import { prisma } from '../lib/db.js';
 import { logger } from '../lib/logger.js';
 import { s3AuthMiddleware } from '../middleware/s3-auth.js';
@@ -24,7 +25,6 @@ import {
   generateObjectPath,
   isValidObjectKey,
   getContentTypeFromExtension,
-  generateETag,
   generateVersionId,
 } from '../lib/object-storage.js';
 import { tmpdir } from 'os';
@@ -32,7 +32,7 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { writeFile, unlink } from 'fs/promises';
 
-const app = new Hono();
+const app = new Hono<AppEnv>();
 
 /**
  * Helper: Write request body to temporary file
@@ -154,7 +154,8 @@ app.post('/:bucket/*', s3AuthMiddleware, async (c) => {
       data: {
         uploadId,
         bucketId: bucket.id,
-        objectKey: key,
+        key,  // Required field in schema
+        objectKey: key,  // Compatibility field
         contentType,
         metadata,
         storageClass: c.req.header('x-amz-storage-class') || bucket.storageClass,

@@ -1,7 +1,7 @@
 // S3 Object API Routes
 import { Hono } from 'hono';
+import type { AppEnv } from '../types/hono.js';
 import { createReadStream } from 'fs';
-import { pipeline } from 'stream/promises';
 import { prisma } from '../lib/db.js';
 import { logger } from '../lib/logger.js';
 import { s3AuthMiddleware } from '../middleware/s3-auth.js';
@@ -13,20 +13,16 @@ import {
   saveFile,
   deleteFile,
   fileExists,
-  getFileSize,
-  getFileStats,
   isValidObjectKey,
   getContentTypeFromExtension,
   generateVersionId,
 } from '../lib/object-storage.js';
-import { Readable } from 'stream';
-import { promisify } from 'util';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { writeFile, unlink } from 'fs/promises';
 
-const app = new Hono();
+const app = new Hono<AppEnv>();
 
 /**
  * Helper: Write request body to temporary file

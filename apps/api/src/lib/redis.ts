@@ -102,7 +102,7 @@ export async function testRedisConnection(): Promise<boolean> {
       await redis.connect();
     }
     const result = await redis.ping();
-    logger.info('✅ Redis connection successful:', result);
+    logger.info({ result }, '✅ Redis connection successful');
     return true;
   } catch (error) {
     logger.error({ err: error }, '❌ Redis connection failed');
