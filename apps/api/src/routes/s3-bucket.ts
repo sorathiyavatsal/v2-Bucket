@@ -59,7 +59,7 @@ app.get('/', s3AuthMiddleware, async (c) => {
 /**
  * Check if bucket exists - HEAD /{bucket}
  */
-app.head('/:bucket', s3AuthMiddleware, async (c) => {
+app.on('HEAD', '/:bucket', s3AuthMiddleware, async (c) => {
   try {
     const bucketName = c.req.param('bucket');
     const user = c.get('user');

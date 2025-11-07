@@ -64,7 +64,7 @@ async function writeBodyToTemp(body: ReadableStream<Uint8Array> | null): Promise
 /**
  * Check if object exists (HEAD) - HEAD /:bucket/:key
  */
-app.head('/:bucket/*', s3AuthMiddleware, async (c) => {
+app.on('HEAD', '/:bucket/*', s3AuthMiddleware, async (c) => {
   try {
     const bucketName = c.req.param('bucket');
     const key = c.req.param('*');
