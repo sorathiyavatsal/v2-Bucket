@@ -82,12 +82,12 @@ export default function HomePage() {
                   </label>
                 </div>
 
-                <button
-                  type="button"
+                <a
+                  href="/auth/forgot-password"
                   className="text-sm font-medium text-primary hover:text-primary/80"
                 >
                   Forgot password?
-                </button>
+                </a>
               </div>
 
               <button
@@ -128,9 +128,9 @@ export default function HomePage() {
 
             <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
               Don't have an account?{' '}
-              <button className="font-medium text-primary hover:text-primary/80">
+              <a href="/auth/signup" className="font-medium text-primary hover:text-primary/80">
                 Sign up
-              </button>
+              </a>
             </p>
           </div>
 
