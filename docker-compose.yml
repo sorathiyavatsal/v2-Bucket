@@ -203,8 +203,12 @@ services:
         echo "Building Web UI..."
         cd /app/apps/web
         pnpm build
+        echo "Copying static files for standalone mode..."
+        cp -r /app/apps/web/.next/static /app/apps/web/.next/standalone/apps/web/.next/
+        cp -r /app/apps/web/public /app/apps/web/.next/standalone/apps/web/ || true
         echo "Starting Web UI..."
-        exec dumb-init node .next/standalone/apps/web/server.js
+        cd /app/apps/web/.next/standalone/apps/web
+        exec dumb-init node server.js
     healthcheck:
       test:
         - CMD
