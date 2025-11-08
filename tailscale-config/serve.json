@@ -1,0 +1,22 @@
+{
+  "TCP": {
+    "443": {
+      "HTTPS": true
+    }
+  },
+  "Web": {
+    "v2bucket.discus-likert.ts.net:443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://127.0.0.1:3001"
+        },
+        "/api/": {
+          "Proxy": "http://127.0.0.1:3000"
+        }
+      }
+    }
+  },
+  "AllowFunnel": {
+    "v2bucket.discus-likert.ts.net:443": true
+  }
+}

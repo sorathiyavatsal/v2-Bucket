@@ -9,10 +9,10 @@ x-common-variables: &common-variables
   JWT_SECRET: eZUD5Lh2All1Z1izl2EyLam3+Jtp6tUQ1BK0RtcP7sY=
   BETTER_AUTH_SECRET: nmabMgr2dRhKIPPfYeCHJaf8pdyHbZ6q5oW37GvGRqA=
 
-  # Public URLs
-  BETTER_AUTH_URL: http://vatsal-nas.tail87f856.ts.net:3000
-  CORS_ORIGIN: http://vatsal-nas.tail87f856.ts.net:3001
-  NEXT_PUBLIC_API_URL: http://vatsal-nas.tail87f856.ts.net:3000
+  # Public URLs (HTTPS for Tailscale Funnel)
+  BETTER_AUTH_URL: https://v2bucket.discus-likert.ts.net
+  CORS_ORIGIN: https://v2bucket.discus-likert.ts.net
+  NEXT_PUBLIC_API_URL: https://v2bucket.discus-likert.ts.net
 
   # Git Repository
   GIT_REPO: https://github.com/sorathiyavatsal/v2-Bucket.git
@@ -20,6 +20,12 @@ x-common-variables: &common-variables
 
   # Storage
   STORAGE_PATH: /storage
+
+  # Tailscale Auth Key (Get from: https://login.tailscale.com/admin/settings/keys)
+  # Generate an auth key with 'Ephemeral' and 'Reusable' options enabled
+  TS_AUTHKEY: tskey-auth-km6C98WufH11CNTRL-LJKhA7xsZqEeWLeBrUPopESimLPxPoiv
+  TS_HOSTNAME: v2bucket
+  TS_STATE_DIR: /var/lib/tailscale
 
 services:
   postgres:
@@ -230,6 +236,27 @@ services:
       retries: 10
       start_period: 600s
 
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: v2bucket-tailscale
+    hostname: ${TS_HOSTNAME:-v2bucket}
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      - TS_USERSPACE=false
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+      - ./tailscale-config:/config
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    command: tailscaled
+
 volumes:
   postgres-data:
     driver: local
@@ -243,6 +270,9 @@ volumes:
   build-cache:
     driver: local
     name: v2bucket-build-cache
+  tailscale-state:
+    driver: local
+    name: v2bucket-tailscale-state
 
 networks:
   v2bucket-network:
