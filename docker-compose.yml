@@ -89,7 +89,15 @@ services:
           git pull origin main
         fi
         echo "Build preparation complete"
+        touch /build/.ready
+        echo "Ready file created - other services can now start"
         sleep infinity
+    healthcheck:
+      test: ["CMD", "test", "-f", "/build/.ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 300s
 
   api:
     image: node:20-alpine
@@ -101,7 +109,7 @@ services:
       redis:
         condition: service_healthy
       builder:
-        condition: service_started
+        condition: service_healthy
     working_dir: /app
     environment:
       <<: *common-variables
@@ -159,8 +167,8 @@ services:
         - http://localhost:3000/health
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 120s
+      retries: 10
+      start_period: 600s
 
   web:
     image: node:20-alpine
@@ -168,7 +176,7 @@ services:
     restart: unless-stopped
     depends_on:
       builder:
-        condition: service_started
+        condition: service_healthy
       api:
         condition: service_healthy
     working_dir: /app
@@ -219,8 +227,8 @@ services:
         - http://localhost:3001
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 120s
+      retries: 10
+      start_period: 600s
 
 volumes:
   postgres-data:
