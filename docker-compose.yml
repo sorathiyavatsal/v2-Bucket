@@ -1,66 +1,66 @@
 x-common-variables: &common-variables
-  POSTGRES_USER: v2bucket
-  POSTGRES_PASSWORD: S90gRUg5n
-  POSTGRES_DB: v2bucket
-  REDIS_PASSWORD: S90gRUg5n
+  # Local Database (PostgreSQL)
+  DATABASE_URL: postgresql://postgres:postgres@postgres:5432/v2bucket
+
+  # Local Redis
+  REDIS_URL: "redis://redis:6379"
+
+  # Authentication Secrets
   JWT_SECRET: eZUD5Lh2All1Z1izl2EyLam3+Jtp6tUQ1BK0RtcP7sY=
   BETTER_AUTH_SECRET: nmabMgr2dRhKIPPfYeCHJaf8pdyHbZ6q5oW37GvGRqA=
+
+  # Public URLs
   BETTER_AUTH_URL: http://vatsal-nas.tail87f856.ts.net:3000
   CORS_ORIGIN: http://vatsal-nas.tail87f856.ts.net:3001
   NEXT_PUBLIC_API_URL: http://vatsal-nas.tail87f856.ts.net:3000
+
+  # Git Repository
   GIT_REPO: https://github.com/sorathiyavatsal/v2-Bucket.git
   GIT_BRANCH: main
-  API_PORT: 3000
-  WEB_PORT: 3001
+
+  # Storage
+  STORAGE_PATH: /storage
 
 services:
   postgres:
-    image: postgres:14-alpine
+    image: postgres:16-alpine
     container_name: v2bucket-postgres
     restart: unless-stopped
     environment:
-      <<: *common-variables
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: v2bucket
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - v2bucket-network
+    ports:
+      - "5432:5432"
     healthcheck:
-      test:
-        - CMD-SHELL
-        - pg_isready -U v2bucket -d v2bucket
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d v2bucket"]
+      interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 5
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
     container_name: v2bucket-redis
     restart: unless-stopped
-    environment:
-      <<: *common-variables
-    command:
-      - redis-server
-      - --requirepass
-      - S90gRUg5n
-      - --appendonly
-      - yes
+    command: redis-server --appendonly yes
     volumes:
       - redis-data:/data
     networks:
       - v2bucket-network
+    ports:
+      - "6379:6379"
     healthcheck:
-      test:
-        - CMD
-        - redis-cli
-        - --raw
-        - incr
-        - ping
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
-      timeout: 5s
+      timeout: 3s
       retries: 5
-      start_period: 10s
+      start_period: 5s
 
   builder:
     image: node:20-alpine
@@ -96,18 +96,15 @@ services:
     container_name: v2bucket-api
     restart: unless-stopped
     depends_on:
-      builder:
-        condition: service_started
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      builder:
+        condition: service_started
     working_dir: /app
     environment:
       <<: *common-variables
-      DATABASE_URL: postgresql://v2bucket:S90gRUg5n@postgres:5432/v2bucket?schema=public
-      REDIS_URL: redis://:S90gRUg5n@redis:6379
-      STORAGE_PATH: /storage
     volumes:
       - build-cache:/build:ro
       - storage-data:/storage
@@ -122,15 +119,22 @@ services:
       - |
         set -e
         echo "Installing dependencies..."
-        apk add --no-cache dumb-init postgresql-client
+        apk add --no-cache dumb-init postgresql-client redis wget
         npm install -g pnpm@9
 
-        echo "Waiting for PostgreSQL to be ready..."
-        until pg_isready -h postgres -p 5432 -U v2bucket; do
-          echo "PostgreSQL is unavailable - sleeping"
+        echo "Testing database connection..."
+        until pg_isready -h postgres -U postgres -d v2bucket; do
+          echo "Database is unavailable - sleeping"
           sleep 2
         done
-        echo "PostgreSQL is ready!"
+        echo "Database is ready!"
+
+        echo "Testing Redis connection..."
+        until redis-cli -h redis ping | grep -q "PONG"; do
+          echo "Redis is unavailable - sleeping"
+          sleep 2
+        done
+        echo "Redis is ready!"
 
         echo "Copying source code..."
         cp -r /build/v2-bucket/* /app/
@@ -171,6 +175,8 @@ services:
     environment:
       <<: *common-variables
       INTERNAL_API_URL: http://api:3000
+      PORT: 3001
+      HOSTNAME: "0.0.0.0"
     volumes:
       - build-cache:/build:ro
     networks:
