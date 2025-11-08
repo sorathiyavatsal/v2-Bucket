@@ -10,9 +10,9 @@ x-common-variables: &common-variables
   BETTER_AUTH_SECRET: nmabMgr2dRhKIPPfYeCHJaf8pdyHbZ6q5oW37GvGRqA=
 
   # Public URLs (HTTPS for Tailscale Funnel)
-  BETTER_AUTH_URL: https://v2bucket.discus-likert.ts.net
+  BETTER_AUTH_URL: https://v2bucket.discus-likert.ts.net/api
   CORS_ORIGIN: https://v2bucket.discus-likert.ts.net
-  NEXT_PUBLIC_API_URL: https://v2bucket.discus-likert.ts.net
+  NEXT_PUBLIC_API_URL: https://v2bucket.discus-likert.ts.net/api
 
   # Git Repository
   GIT_REPO: https://github.com/sorathiyavatsal/v2-Bucket.git
