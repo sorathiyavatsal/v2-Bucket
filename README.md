@@ -121,9 +121,9 @@ v2-bucket/
 
 - **Node.js**: v20.0.0 or higher
 - **pnpm**: v9.0.0 or higher
-- **Docker**: Latest version (for PostgreSQL and MinIO)
+- **Docker**: Latest version (for PostgreSQL and Redis)
 - **PostgreSQL**: v14+ (via Docker or local install)
-- **MinIO**: Latest version (via Docker or local install)
+- **Redis**: v7+ (via Docker or local install)
 
 ### Installation
 
