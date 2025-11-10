@@ -7,63 +7,50 @@ import { Alert, AlertDescription } from '@/components/ui/Alert';
 import { BucketCard } from '@/components/buckets/BucketCard';
 import { CreateBucketDialog } from '@/components/buckets/CreateBucketDialog';
 import { Plus, Search, Loader2 } from 'lucide-react';
-
-// Mock data - will be replaced with tRPC calls
-const mockBuckets = [
-  {
-    name: 'production-assets',
-    region: 'us-east-1',
-    createdAt: new Date('2024-01-15'),
-    totalSize: 456000000000,
-    objectCount: 1234,
-    storageClass: 'STANDARD',
-  },
-  {
-    name: 'user-uploads',
-    region: 'us-west-2',
-    createdAt: new Date('2024-02-20'),
-    totalSize: 234000000000,
-    objectCount: 5678,
-    storageClass: 'STANDARD',
-  },
-  {
-    name: 'backups-2025',
-    region: 'us-east-1',
-    createdAt: new Date('2025-01-01'),
-    totalSize: 128000000000,
-    objectCount: 234,
-    storageClass: 'GLACIER',
-  },
-  {
-    name: 'test-bucket',
-    region: 'eu-west-1',
-    createdAt: new Date('2025-01-05'),
-    totalSize: 12000000000,
-    objectCount: 45,
-    storageClass: 'STANDARD',
-  },
-];
+import { trpc } from '@/lib/trpc';
 
 export default function BucketsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [buckets] = useState(mockBuckets);
-  const [isLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const filteredBuckets = buckets.filter((bucket) =>
+  // Fetch buckets with tRPC
+  const { data: bucketsData, isLoading, refetch } = trpc.bucket.list.useQuery();
+
+  // Create bucket mutation
+  const createBucketMutation = trpc.bucket.create.useMutation({
+    onSuccess: () => {
+      setIsCreateDialogOpen(false);
+      setError('');
+      refetch(); // Refresh the bucket list
+    },
+    onError: (error) => {
+      setError(error.message);
+    },
+  });
+
+  // Delete bucket mutation
+  const deleteBucketMutation = trpc.bucket.delete.useMutation({
+    onSuccess: () => {
+      setError('');
+      refetch(); // Refresh the bucket list
+    },
+    onError: (error) => {
+      setError(error.message);
+    },
+  });
+
+  const filteredBuckets = bucketsData?.filter((bucket) =>
     bucket.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ) || [];
 
-  const handleCreateBucket = async (data: { name: string; region: string; storageClass: string }) => {
-    // TODO: Implement tRPC mutation
-    console.log('Creating bucket:', data);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+  const handleCreateBucket = async (data: { name: string; region: string; storageClass: string; acl?: string }) => {
+    createBucketMutation.mutate(data);
   };
 
   const handleDeleteBucket = async (name: string) => {
-    // TODO: Implement delete confirmation and tRPC mutation
-    if (confirm(`Are you sure you want to delete bucket "${name}"?`)) {
-      console.log('Deleting bucket:', name);
+    if (confirm(`Are you sure you want to delete bucket "${name}"? This action cannot be undone.`)) {
+      deleteBucketMutation.mutate({ name });
     }
   };
 
@@ -82,6 +69,13 @@ export default function BucketsPage() {
           Create Bucket
         </Button>
       </div>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert variant="error">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Search Bar */}
       <div className="flex items-center gap-4">
@@ -141,6 +135,7 @@ export default function BucketsPage() {
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
         onCreate={handleCreateBucket}
+        isCreating={createBucketMutation.isPending}
       />
     </div>
   );

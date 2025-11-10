@@ -38,13 +38,21 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
 
     try {
-      // TODO: Implement actual password reset with better-auth
-      // For now, simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { forgetPassword } = await import('@/lib/auth-client');
 
-      setIsSuccess(true);
-    } catch (error) {
-      setError('Failed to send reset email. Please try again.');
+      await forgetPassword({
+        email,
+        redirectTo: '/auth/reset-password',
+      }, {
+        onSuccess: () => {
+          setIsSuccess(true);
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message || 'Failed to send reset email');
+        },
+      });
+    } catch (error: any) {
+      setError(error.message || 'Failed to send reset email. Please try again.');
     } finally {
       setIsLoading(false);
     }

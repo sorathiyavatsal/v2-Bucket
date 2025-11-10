@@ -122,7 +122,11 @@ export async function s3AuthMiddleware(c: Context, next: () => Promise<void>) {
 
     await next();
   } catch (error) {
-    logger.error({ error }, 'S3 authentication error');
+    logger.error({
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'S3 authentication error');
     return c.text('<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>We encountered an internal error. Please try again.</Message></Error>', 500, {
       'Content-Type': 'application/xml',
     });

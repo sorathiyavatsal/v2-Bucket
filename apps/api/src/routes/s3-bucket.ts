@@ -19,12 +19,19 @@ import {
 import { policyFromJSON } from '../lib/bucket-policy.js';
 import { corsFromJSON } from '../lib/bucket-policy.js';
 
-const app = new Hono<AppEnv>();
+/**
+ * Register S3 bucket routes directly on the main app
+ */
+export function registerS3BucketRoutes(app: Hono<AppEnv>) {
+
+// Debug: Log when routes are registered
+console.log('🔧 s3-bucket.ts: Registering routes...');
 
 /**
- * List all buckets - GET /
+ * List all buckets - GET /api/s3/
  */
-app.get('/', s3AuthMiddleware, async (c) => {
+app.get('/api/s3', s3AuthMiddleware, async (c) => {
+  console.log('📍 ROOT ROUTE HIT: /api/s3');
   try {
     const user = c.get('user');
 
@@ -88,19 +95,19 @@ app.on('HEAD', '/:bucket', s3AuthMiddleware, async (c) => {
 
 /**
  * List bucket contents or get bucket configuration - GET /{bucket}
+ * Note: AWS SDK with forcePathStyle may send requests with trailing slash
+ * We handle both /:bucket and /:bucket/ by extracting the logic into a shared handler
  */
-app.get('/:bucket', s3AuthMiddleware, async (c) => {
+const handleBucketRequest = async (c: any) => {
   try {
     const bucketName = c.req.param('bucket');
     const user = c.get('user');
 
+    logger.debug({ bucketName, path: c.req.path, url: c.req.url }, 'S3 Bucket GET route handler');
+
     // Get bucket
     const bucket = await prisma.bucket.findUnique({
       where: { name: bucketName },
-      include: {
-        policy: true,
-        corsConfiguration: true,
-      },
     });
 
     if (!bucket) {
@@ -160,12 +167,13 @@ app.get('/:bucket', s3AuthMiddleware, async (c) => {
           'Content-Type': 'application/xml',
         });
       }
-      return c.json(policyFromJSON(bucket.policy.policyDocument));
+      // bucket.policy is a JSON field, not a relation
+      return c.json(policyFromJSON(bucket.policy as any));
     }
 
     // GET /{bucket}?cors - Get CORS configuration
     if (url.searchParams.has('cors')) {
-      if (!bucket.corsConfiguration) {
+      if (!bucket.corsRules) {
         const xml = buildErrorXml(
           'NoSuchCORSConfiguration',
           'The CORS configuration does not exist'
@@ -175,7 +183,8 @@ app.get('/:bucket', s3AuthMiddleware, async (c) => {
         });
       }
 
-      const cors = corsFromJSON(bucket.corsConfiguration.configuration);
+      // bucket.corsRules is a JSON field, not a relation
+      const cors = corsFromJSON(bucket.corsRules as any);
 
       // Build CORS XML
       let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
@@ -307,12 +316,28 @@ app.get('/:bucket', s3AuthMiddleware, async (c) => {
       'Content-Type': 'application/xml',
     });
   }
+};
+
+// Register the handler for both /api/s3/:bucket and /api/s3/:bucket/
+// AWS SDK with forcePathStyle sends requests with trailing slash
+console.log('🔧 s3-bucket.ts: Registering GET /api/s3/:bucket');
+app.get('/api/s3/:bucket', s3AuthMiddleware, async (c) => {
+  console.log('📍 BUCKET ROUTE HIT (no slash):', c.req.param('bucket'), c.req.path);
+  logger.debug({ bucket: c.req.param('bucket'), path: c.req.path }, 'BUCKET ROUTE (no slash) MATCHED');
+  return handleBucketRequest(c);
+});
+
+console.log('🔧 s3-bucket.ts: Registering GET /api/s3/:bucket/');
+app.get('/api/s3/:bucket/', s3AuthMiddleware, async (c) => {
+  console.log('📍 BUCKET ROUTE HIT (with slash):', c.req.param('bucket'), c.req.path);
+  logger.debug({ bucket: c.req.param('bucket'), path: c.req.path }, 'BUCKET ROUTE (with slash) MATCHED');
+  return handleBucketRequest(c);
 });
 
 /**
- * Create bucket - PUT /{bucket}
+ * Create bucket - PUT /api/s3/{bucket}
  */
-app.put('/:bucket', s3AuthMiddleware, async (c) => {
+app.put('/api/s3/:bucket', s3AuthMiddleware, async (c) => {
   try {
     const bucketName = c.req.param('bucket');
     const user = c.get('user');
@@ -435,9 +460,9 @@ app.put('/:bucket', s3AuthMiddleware, async (c) => {
 });
 
 /**
- * Delete bucket - DELETE /{bucket}
+ * Delete bucket - DELETE /api/s3/{bucket}
  */
-app.delete('/:bucket', s3AuthMiddleware, async (c) => {
+app.delete('/api/s3/:bucket', s3AuthMiddleware, async (c) => {
   try {
     const bucketName = c.req.param('bucket');
     const user = c.get('user');
@@ -485,7 +510,7 @@ app.delete('/:bucket', s3AuthMiddleware, async (c) => {
 
     logger.info({ userId: user.id, bucketName: bucket.name }, 'Bucket deleted via S3 API');
 
-    return c.text('', 204);
+    return c.body(null, 204);
   } catch (error) {
     logger.error({ error }, 'Delete bucket error');
     const xml = buildErrorXml(
@@ -498,4 +523,4 @@ app.delete('/:bucket', s3AuthMiddleware, async (c) => {
   }
 });
 
-export default app;
+} // end registerS3BucketRoutes

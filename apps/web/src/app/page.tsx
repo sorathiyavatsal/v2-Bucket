@@ -1,4 +1,64 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { signIn } from '@/lib/auth-client';
+import { useAuth } from '@/components/providers/AuthProvider';
+import { trpc } from '@/lib/trpc';
+
 export default function HomePage() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  // Check if there are any users in the system
+  const { data: userCheck } = trpc.auth.hasUsers.useQuery();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.push('/app');
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSubmitting(true);
+
+    try {
+      await signIn.email({
+        email,
+        password,
+      }, {
+        onSuccess: () => {
+          router.push('/app');
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message || 'Invalid email or password');
+        },
+      });
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during sign in');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       <div className="flex min-h-screen flex-col items-center justify-center p-4">
@@ -36,7 +96,25 @@ export default function HomePage() {
               Sign In
             </h2>
 
-            <form className="space-y-4">
+            {/* First User Info - Only show if no users exist */}
+            {userCheck && !userCheck.hasUsers && (
+              <div className="mb-6 rounded-md bg-blue-50 p-4 dark:bg-blue-900/20">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Welcome!</strong> No users registered yet. The first user to sign up will automatically become the administrator.{' '}
+                  <a href="/auth/signup" className="font-medium underline hover:text-blue-900 dark:hover:text-blue-100">
+                    Create account
+                  </a>
+                </p>
+              </div>
+            )}
+
+            {error && (
+              <div className="mb-4 rounded-md bg-red-50 p-4 dark:bg-red-900/20">
+                <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label
                   htmlFor="email"
@@ -47,8 +125,11 @@ export default function HomePage() {
                 <input
                   type="email"
                   id="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500"
                   placeholder="you@example.com"
+                  required
                 />
               </div>
 
@@ -62,8 +143,11 @@ export default function HomePage() {
                 <input
                   type="password"
                   id="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500"
                   placeholder="••••••••"
+                  required
                 />
               </div>
 
@@ -92,9 +176,10 @@ export default function HomePage() {
 
               <button
                 type="submit"
-                className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                disabled={submitting}
+                className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Sign In
+                {submitting ? 'Signing In...' : 'Sign In'}
               </button>
             </form>
 

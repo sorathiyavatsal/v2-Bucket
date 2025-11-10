@@ -16,17 +16,17 @@ import { Alert, AlertDescription } from '@/components/ui/Alert';
 export interface CreateBucketDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate?: (data: { name: string; region: string; storageClass: string }) => Promise<void>;
+  onCreate?: (data: { name: string; region: string; storageClass: string }) => Promise<void> | void;
+  isCreating?: boolean;
 }
 
-export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucketDialogProps) {
+export function CreateBucketDialog({ open, onOpenChange, onCreate, isCreating = false }: CreateBucketDialogProps) {
   const [formData, setFormData] = useState({
     name: '',
     region: 'us-east-1',
     storageClass: 'STANDARD',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState('');
 
   const validateForm = () => {
@@ -52,17 +52,12 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
       return;
     }
 
-    setIsLoading(true);
-
     try {
       await onCreate?.(formData);
-      // Reset form and close dialog
+      // Reset form (dialog will be closed by parent on success)
       setFormData({ name: '', region: 'us-east-1', storageClass: 'STANDARD' });
-      onOpenChange(false);
     } catch (error) {
       setServerError(error instanceof Error ? error.message : 'Failed to create bucket');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -131,16 +126,16 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
           type="button"
           variant="outline"
           onClick={() => onOpenChange(false)}
-          disabled={isLoading}
+          disabled={isCreating}
         >
           Cancel
         </Button>
         <Button
           type="submit"
           onClick={handleSubmit}
-          disabled={isLoading}
+          disabled={isCreating}
         >
-          {isLoading ? 'Creating...' : 'Create Bucket'}
+          {isCreating ? 'Creating...' : 'Create Bucket'}
         </Button>
       </DialogFooter>
     </Dialog>

@@ -1,12 +1,14 @@
 // Better-Auth Configuration
 import { betterAuth } from 'better-auth';
+import { prismaAdapter } from 'better-auth/adapters/prisma';
+import { prisma } from './db.js';
+import { logger } from './logger.js';
 
 // Define the auth configuration
 export const auth = betterAuth({
-  database: {
-    provider: 'pg',
-    url: process.env.DATABASE_URL!,
-  },
+  database: prismaAdapter(prisma, {
+    provider: 'postgresql',
+  }),
 
   // Email/Password authentication
   emailAndPassword: {
@@ -23,12 +25,17 @@ export const auth = betterAuth({
   // Security
   secret: process.env.AUTH_SECRET || 'development-secret-key-change-in-production',
   baseURL: process.env.AUTH_URL || 'http://localhost:3000',
+  trustedOrigins: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3001'],
 
   // Advanced options
   advanced: {
     useSecureCookies: process.env.NODE_ENV === 'production',
     cookiePrefix: 'v2bucket',
   },
+
+  // TODO: Re-implement first user as admin logic
+  // The hooks API in Better Auth v1.3.34 appears to have compatibility issues
+  // We'll implement this in the tRPC signup endpoint instead
 });
 
 // Export auth handler for use in routes

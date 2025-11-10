@@ -57,6 +57,7 @@ model Session {
   ipAddress String?
   userAgent String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -67,16 +68,19 @@ model Session {
 model Account {
   id                String   @id @default(cuid())
   userId            String
-  provider          String   // google, github, etc.
-  providerAccountId String
+  accountId         String   // Better Auth: account identifier
+  providerId        String   // Better Auth: provider type (credential, google, github, etc.)
+  provider          String   @default("credential") // Compatibility field - defaults to credential
   accessToken       String?  @db.Text
   refreshToken      String?  @db.Text
   expiresAt         DateTime?
+  password          String?  @db.Text // Better Auth: hashed password for credential provider
   createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([provider, providerAccountId])
+  @@unique([providerId, accountId])
   @@index([userId])
 }
 

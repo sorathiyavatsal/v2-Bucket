@@ -44,11 +44,12 @@ V2-Bucket is a production-ready, S3-compatible object storage platform designed 
 
 ### Backend (API)
 - **Runtime**: Node.js 20+
-- **Framework**: Fastify (high-performance web framework)
+- **Framework**: Hono (ultra-fast web framework)
 - **API Layer**: tRPC (end-to-end type-safe APIs)
 - **Database**: PostgreSQL with Prisma ORM
-- **Storage**: MinIO (S3-compatible object storage)
-- **Authentication**: JWT-based authentication
+- **Storage**: Native filesystem storage (S3-compatible API)
+- **Authentication**: Better-Auth with session management
+- **Caching**: Redis for session and data caching
 - **Validation**: Zod schemas
 
 ### Frontend (Web)

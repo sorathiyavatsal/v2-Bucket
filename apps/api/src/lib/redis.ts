@@ -3,10 +3,19 @@ import { createClient, type RedisClientType } from 'redis';
 import { logger } from './logger.js';
 import { ServiceUnavailableError } from './errors.js';
 
-// Create Redis client
+// Parse Redis URL to extract host and port
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6380';
+const redisUrlObj = new URL(redisUrl);
+const redisHost = redisUrlObj.hostname || 'localhost';
+const redisPort = redisUrlObj.port ? parseInt(redisUrlObj.port) : 6380;
+
+logger.info({ redisHost, redisPort, redisUrl }, 'Redis configuration');
+
+// Create Redis client with explicit host and port
 export const redis: RedisClientType = createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379',
   socket: {
+    host: redisHost,
+    port: redisPort,
     reconnectStrategy: false, // Disable auto reconnect for now
   },
 }) as RedisClientType;

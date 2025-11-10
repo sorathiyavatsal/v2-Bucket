@@ -1,7 +1,15 @@
 // Rate Limiting Middleware
 import { rateLimiter } from 'hono-rate-limiter';
-import { redis } from '../lib/redis.js';
 import { RateLimitError } from '../lib/errors.js';
+
+// Import redis lazily to avoid initialization issues
+let redis: any = null;
+try {
+  const redisModule = await import('../lib/redis.js');
+  redis = redisModule.redis;
+} catch (error) {
+  console.warn('Redis module not available for rate limiting, using in-memory fallback');
+}
 
 /**
  * Redis-based rate limiter store
@@ -19,11 +27,14 @@ class RedisStore {
   async increment(key: string): Promise<{ totalHits: number; resetTime: Date }> {
     const redisKey = `${this.prefix}${key}`;
 
+    // Always use in-memory fallback since Redis may not be ready
+    // This prevents rate limiter from blocking all requests
+    const now = Date.now();
+    const windowMs = 60000;
+
     try {
-      // Try Redis first
-      if (redis.isOpen) {
-        const now = Date.now();
-        const windowMs = 60000; // 1 minute window
+      // Try Redis first - but only if redis client is defined, has isOpen property, and is actually open
+      if (redis && redis.isOpen === true) {
         const resetTime = new Date(now + windowMs);
 
         // Use Redis INCR with expiry
@@ -35,12 +46,11 @@ class RedisStore {
         return { totalHits: count, resetTime };
       }
     } catch (error) {
-      // Redis failed, fall back to in-memory
+      // Redis failed, fall back to in-memory (continue below)
+      console.warn('Redis rate limiter failed, using in-memory fallback:', error instanceof Error ? error.message : error);
     }
 
     // Fallback to in-memory store
-    const now = Date.now();
-    const windowMs = 60000;
     const existing = this.fallbackStore.get(key);
 
     if (existing && existing.resetTime > now) {

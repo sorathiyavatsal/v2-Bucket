@@ -285,11 +285,11 @@ export const bucketRouter = router({
 
       const totalBuckets = buckets.length;
       const totalObjects = buckets.reduce((sum, b) => sum + b.objectCount, 0);
-      const totalSize = buckets.reduce((sum, b) => sum + b.totalSize, BigInt(0));
+      const totalSize = buckets.reduce((sum, b) => sum + BigInt(b.totalSize), BigInt(0));
 
       const storageUsagePercent = calculateStorageUsagePercent(
         totalSize,
-        ctx.user.storageQuota
+        BigInt(ctx.user.storageQuota)
       );
 
       return {

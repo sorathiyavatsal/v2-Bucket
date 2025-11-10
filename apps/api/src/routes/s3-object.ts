@@ -5,7 +5,7 @@ import { createReadStream } from 'fs';
 import { prisma } from '../lib/db.js';
 import { logger } from '../lib/logger.js';
 import { s3AuthMiddleware } from '../middleware/s3-auth.js';
-import { buildErrorXml, buildCopyObjectXml, S3ErrorCodes } from '../lib/s3-xml.js';
+import { buildErrorXml, buildCopyObjectXml, buildListObjectsXml, S3ErrorCodes } from '../lib/s3-xml.js';
 import {
   calculateMD5,
   generateETag,
@@ -22,28 +22,23 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { writeFile, unlink } from 'fs/promises';
 
-const app = new Hono<AppEnv>();
+/**
+ * Register S3 object routes directly on the main app
+ */
+export function registerS3ObjectRoutes(app: Hono<AppEnv>) {
 
 /**
  * Helper: Write request body to temporary file
  */
-async function writeBodyToTemp(body: ReadableStream<Uint8Array> | null): Promise<string> {
+async function writeBodyToTemp(body: ArrayBuffer | null): Promise<string> {
   if (!body) {
     throw new Error('No request body');
   }
 
   const tempPath = join(tmpdir(), `s3-upload-${randomBytes(16).toString('hex')}`);
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
 
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-
-    const buffer = Buffer.concat(chunks);
+    const buffer = Buffer.from(body);
     await writeFile(tempPath, buffer);
     return tempPath;
   } catch (error) {
@@ -58,12 +53,14 @@ async function writeBodyToTemp(body: ReadableStream<Uint8Array> | null): Promise
 }
 
 /**
- * Check if object exists (HEAD) - HEAD /:bucket/:key
+ * Check if object exists (HEAD) - HEAD /api/s3/:bucket/:key
  */
-app.on('HEAD', '/:bucket/*', s3AuthMiddleware, async (c) => {
+app.on('HEAD', '/api/s3/:bucket/*', s3AuthMiddleware, async (c) => {
   try {
     const bucketName = c.req.param('bucket');
-    const key = c.req.param('*');
+    // Manual path parsing workaround (Hono wildcard param broken)
+    const fullPath = c.req.path;
+    const key = fullPath.replace(`/api/s3/${bucketName}/`, '');
     const user = c.get('user');
 
     if (!key) {
@@ -78,12 +75,12 @@ app.on('HEAD', '/:bucket/*', s3AuthMiddleware, async (c) => {
       return c.text('', 404);
     }
 
-    const object = await prisma.object.findUnique({
+    const object = await prisma.object.findFirst({
       where: {
-        bucketId_key: {
-          bucketId: bucket.id,
-          key,
-        },
+        bucketId: bucket.id,
+        key,
+        versionId: null,
+        isLatest: true,
       },
     });
 
@@ -108,26 +105,129 @@ app.on('HEAD', '/:bucket/*', s3AuthMiddleware, async (c) => {
       'x-amz-version-id': object.versionId || undefined,
     });
   } catch (error) {
-    logger.error({ error }, 'Head object error');
+    logger.error({
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Head object error');
     return c.text('', 500);
   }
 });
 
 /**
- * Get object (download) - GET /:bucket/:key
+ * Get object (download) - GET /api/s3/:bucket/:key
+ * Note: Due to Hono's routing, this wildcard route will also match /api/s3/:bucket/ (with empty key).
+ * When the key is empty, we need to check if it's a list objects request based on query params.
  */
-app.get('/:bucket/*', s3AuthMiddleware, async (c) => {
+app.get('/api/s3/:bucket/*', s3AuthMiddleware, async (c) => {
+  console.log('📍 OBJECT ROUTE HIT: /api/s3/:bucket/*');
   try {
     const bucketName = c.req.param('bucket');
-    const key = c.req.param('*');
+    // Manual path parsing workaround (Hono wildcard param broken)
+    const fullPath = c.req.path;
+    const pathAfterBucket = fullPath.replace(`/api/s3/${bucketName}/`, '');
+    const key = pathAfterBucket || c.req.param('*');
     const user = c.get('user');
 
-    if (!key) {
-      const xml = buildErrorXml(
-        S3ErrorCodes.InvalidArgument,
-        'Missing object key'
-      );
-      return c.text(xml, 400, {
+    console.log('📍 Object route params:', { bucketName, key, path: c.req.path, pathAfterBucket });
+    logger.debug({ bucketName, key, path: c.req.path, url: c.req.url }, 'S3 Object GET route handler');
+
+    // If no key or empty key, handle as bucket listing request
+    // This happens because /:bucket/* matches /bucket/ with empty wildcard
+    if (!key || key.trim() === '') {
+      // Get bucket for listing
+      const bucket = await prisma.bucket.findUnique({
+        where: { name: bucketName },
+      });
+
+      if (!bucket) {
+        const xml = buildErrorXml(
+          S3ErrorCodes.NoSuchBucket,
+          'The specified bucket does not exist',
+          `/${bucketName}`
+        );
+        return c.text(xml, 404, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      if (bucket.userId !== user.id) {
+        const xml = buildErrorXml(
+          S3ErrorCodes.AccessDenied,
+          'Access Denied'
+        );
+        return c.text(xml, 403, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      // Handle bucket listing (ListObjectsV2)
+      const url = new URL(c.req.url);
+      const prefix = url.searchParams.get('prefix') || '';
+      const delimiter = url.searchParams.get('delimiter') || undefined;
+      const maxKeysParam = url.searchParams.get('max-keys');
+      const maxKeys = maxKeysParam ? Math.min(parseInt(maxKeysParam, 10), 1000) : 1000;
+      const marker = url.searchParams.get('marker') || undefined;
+      const startAfter = url.searchParams.get('start-after') || undefined;
+
+      // Build where clause for listing
+      const where: any = {
+        bucketId: bucket.id,
+        isDeleted: false,
+      };
+
+      if (prefix) {
+        where.key = { startsWith: prefix };
+      }
+
+      if (startAfter || marker) {
+        where.key = { ...where.key, gt: startAfter || marker };
+      }
+
+      // Fetch objects
+      const objects = await prisma.object.findMany({
+        where,
+        orderBy: { key: 'asc' },
+        take: maxKeys + 1,
+      });
+
+      const isTruncated = objects.length > maxKeys;
+      const contents = objects.slice(0, maxKeys);
+
+      // If delimiter is specified, group by common prefixes
+      const commonPrefixes: string[] = [];
+      if (delimiter) {
+        const prefixSet = new Set<string>();
+        contents.forEach((obj) => {
+          const keyAfterPrefix = obj.key.substring(prefix.length);
+          const delimiterIndex = keyAfterPrefix.indexOf(delimiter);
+          if (delimiterIndex > 0) {
+            const commonPrefix = prefix + keyAfterPrefix.substring(0, delimiterIndex + 1);
+            prefixSet.add(commonPrefix);
+          }
+        });
+        commonPrefixes.push(...Array.from(prefixSet).sort());
+      }
+
+      const xml = buildListObjectsXml({
+        bucketName: bucket.name,
+        prefix: prefix || undefined,
+        marker: marker || startAfter,
+        maxKeys,
+        delimiter,
+        isTruncated,
+        nextMarker: isTruncated ? contents[contents.length - 1]?.key : undefined,
+        contents: contents.map(obj => ({
+          key: obj.key,
+          lastModified: obj.updatedAt,
+          etag: obj.etag,
+          size: obj.size,
+          storageClass: obj.storageClass,
+        })),
+        commonPrefixes,
+      });
+
+      return c.text(xml, 200, {
         'Content-Type': 'application/xml',
       });
     }
@@ -156,12 +256,12 @@ app.get('/:bucket/*', s3AuthMiddleware, async (c) => {
       });
     }
 
-    const object = await prisma.object.findUnique({
+    const object = await prisma.object.findFirst({
       where: {
-        bucketId_key: {
-          bucketId: bucket.id,
-          key,
-        },
+        bucketId: bucket.id,
+        key,
+        versionId: null,
+        isLatest: true,
       },
     });
 
@@ -207,7 +307,11 @@ app.get('/:bucket/*', s3AuthMiddleware, async (c) => {
       ),
     });
   } catch (error) {
-    logger.error({ error }, 'Get object error');
+    logger.error({
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Get object error');
     const xml = buildErrorXml(
       S3ErrorCodes.InternalError,
       'We encountered an internal error. Please try again.'
@@ -219,13 +323,17 @@ app.get('/:bucket/*', s3AuthMiddleware, async (c) => {
 });
 
 /**
- * Upload object (PUT) or Copy object - PUT /:bucket/:key
+ * Upload object (PUT) or Copy object - PUT /api/s3/:bucket/:key
  */
-app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
+app.put('/api/s3/:bucket/*', s3AuthMiddleware, async (c) => {
   try {
     const bucketName = c.req.param('bucket');
-    const key = c.req.param('*');
+    // Manual path parsing workaround (Hono wildcard param broken)
+    const fullPath = c.req.path;
+    const key = fullPath.replace(`/api/s3/${bucketName}/`, '');
     const user = c.get('user');
+
+    console.log('📍 OBJECT PUT ROUTE HIT:', { bucket: bucketName, key, path: fullPath });
 
     if (!key) {
       const xml = buildErrorXml(
@@ -296,12 +404,13 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
         });
       }
 
-      const sourceObject = await prisma.object.findUnique({
+      // Find the source object (use findFirst instead of findUnique because versionId is null)
+      const sourceObject = await prisma.object.findFirst({
         where: {
-          bucketId_key: {
-            bucketId: sourceBucket.id,
-            key: sourceKey,
-          },
+          bucketId: sourceBucket.id,
+          key: sourceKey,
+          versionId: null,
+          isLatest: true,
         },
       });
 
@@ -322,12 +431,12 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
       await saveFile(sourceObjectPath, destObjectPath);
 
       // Check if object already exists
-      const existingObject = await prisma.object.findUnique({
+      const existingObject = await prisma.object.findFirst({
         where: {
-          bucketId_key: {
-            bucketId: bucket.id,
-            key,
-          },
+          bucketId: bucket.id,
+          key,
+          versionId: null,
+          isLatest: true,
         },
       });
 
@@ -339,36 +448,37 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
       const now = new Date();
 
       // Create or update object in database
-      await prisma.object.upsert({
-        where: {
-          bucketId_key: {
+      if (existingObject) {
+        await prisma.object.update({
+          where: { id: existingObject.id },
+          data: {
+            size: sourceObject.size,
+            contentType: sourceObject.contentType,
+            etag: sourceObject.etag,
+            md5Hash: sourceObject.md5Hash,
+            storageClass: sourceObject.storageClass,
+            metadata: sourceObject.metadata,
+            versionId,
+            updatedAt: now,
+          },
+        });
+      } else {
+        await prisma.object.create({
+          data: {
             bucketId: bucket.id,
             key,
+            size: sourceObject.size,
+            contentType: sourceObject.contentType,
+            etag: sourceObject.etag,
+            md5Hash: sourceObject.md5Hash,
+            storageClass: sourceObject.storageClass,
+            metadata: sourceObject.metadata,
+            versionId,
+            physicalPath: generateObjectPath(bucket.volumePath, key),
+            isLatest: true,
           },
-        },
-        create: {
-          bucketId: bucket.id,
-          key,
-          size: sourceObject.size,
-          contentType: sourceObject.contentType,
-          etag: sourceObject.etag,
-          md5Hash: sourceObject.md5Hash,
-          storageClass: sourceObject.storageClass,
-          metadata: sourceObject.metadata,
-          versionId,
-          updatedAt: now,
-        },
-        update: {
-          size: sourceObject.size,
-          contentType: sourceObject.contentType,
-          etag: sourceObject.etag,
-          md5Hash: sourceObject.md5Hash,
-          storageClass: sourceObject.storageClass,
-          metadata: sourceObject.metadata,
-          versionId,
-          updatedAt: now,
-        },
-      });
+        });
+      }
 
       const xml = buildCopyObjectXml({
         etag: sourceObject.etag,
@@ -409,7 +519,8 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
     }
 
     // Write request body to temporary file
-    const tempPath = await writeBodyToTemp(c.req.raw.body);
+    const bodyBuffer = await c.req.arrayBuffer();
+    const tempPath = await writeBodyToTemp(bodyBuffer);
 
     try {
       // Calculate MD5 and ETag
@@ -442,12 +553,12 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
       }
 
       // Check if object already exists
-      const existingObject = await prisma.object.findUnique({
+      const existingObject = await prisma.object.findFirst({
         where: {
-          bucketId_key: {
-            bucketId: bucket.id,
-            key,
-          },
+          bucketId: bucket.id,
+          key,
+          versionId: null,
+          isLatest: true,
         },
       });
 
@@ -459,35 +570,51 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
       }
 
       // Create or update object in database
-      const object = await prisma.object.upsert({
-        where: {
-          bucketId_key: {
+      // For non-versioned buckets, we can't use upsert with versionId: null in the where clause
+      // So we handle create/update separately
+      let object;
+
+      if (existingObject && !bucket.versioningEnabled) {
+        // Update existing object (non-versioned bucket)
+        object = await prisma.object.update({
+          where: { id: existingObject.id },
+          data: {
+            size: BigInt(size),
+            contentType,
+            etag,
+            md5Hash,
+            storageClass: c.req.header('x-amz-storage-class') || bucket.storageClass,
+            metadata,
+            physicalPath: destPath,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        // Create new object (either new object or versioned bucket)
+        object = await prisma.object.create({
+          data: {
             bucketId: bucket.id,
             key,
+            size: BigInt(size),
+            contentType,
+            etag,
+            md5Hash,
+            storageClass: c.req.header('x-amz-storage-class') || bucket.storageClass,
+            metadata,
+            versionId,
+            physicalPath: destPath,
+            isLatest: true,
           },
-        },
-        create: {
-          bucketId: bucket.id,
-          key,
-          size: BigInt(size),
-          contentType,
-          etag,
-          md5Hash,
-          storageClass: c.req.header('x-amz-storage-class') || bucket.storageClass,
-          metadata,
-          versionId,
-        },
-        update: {
-          size: BigInt(size),
-          contentType,
-          etag,
-          md5Hash,
-          storageClass: c.req.header('x-amz-storage-class') || bucket.storageClass,
-          metadata,
-          versionId,
-          updatedAt: new Date(),
-        },
-      });
+        });
+
+        // If versioned bucket and there was an existing object, mark it as not latest
+        if (bucket.versioningEnabled && existingObject) {
+          await prisma.object.update({
+            where: { id: existingObject.id },
+            data: { isLatest: false },
+          });
+        }
+      }
 
       // Update bucket statistics
       await prisma.bucket.update({
@@ -513,10 +640,15 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
 
       logger.info({ userId: user.id, bucketName, key }, 'Object uploaded via S3 API');
 
-      return c.text('', 200, {
+      const responseHeaders: Record<string, string> = {
         'ETag': etag,
-        'x-amz-version-id': versionId || undefined,
-      });
+      };
+
+      if (versionId) {
+        responseHeaders['x-amz-version-id'] = versionId;
+      }
+
+      return c.text('', 200, responseHeaders);
     } finally {
       // Clean up temp file
       try {
@@ -526,7 +658,11 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
       }
     }
   } catch (error) {
-    logger.error({ error }, 'Put object error');
+    logger.error({
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Put object error');
     const xml = buildErrorXml(
       S3ErrorCodes.InternalError,
       'We encountered an internal error. Please try again.'
@@ -538,12 +674,14 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
 });
 
 /**
- * Delete object - DELETE /:bucket/:key
+ * Delete object - DELETE /api/s3/:bucket/:key
  */
-app.delete('/:bucket/*', s3AuthMiddleware, async (c) => {
+app.delete('/api/s3/:bucket/*', s3AuthMiddleware, async (c) => {
   try {
     const bucketName = c.req.param('bucket');
-    const key = c.req.param('*');
+    // Manual path parsing workaround (Hono wildcard param broken)
+    const fullPath = c.req.path;
+    const key = fullPath.replace(`/api/s3/${bucketName}/`, '');
     const user = c.get('user');
 
     if (!key) {
@@ -580,18 +718,18 @@ app.delete('/:bucket/*', s3AuthMiddleware, async (c) => {
       });
     }
 
-    const object = await prisma.object.findUnique({
+    const object = await prisma.object.findFirst({
       where: {
-        bucketId_key: {
-          bucketId: bucket.id,
-          key,
-        },
+        bucketId: bucket.id,
+        key,
+        versionId: null,
+        isLatest: true,
       },
     });
 
     if (!object) {
       // S3 returns 204 even if object doesn't exist
-      return c.text('', 204);
+      return c.body(null, 204);
     }
 
     // Delete file from disk
@@ -599,12 +737,10 @@ app.delete('/:bucket/*', s3AuthMiddleware, async (c) => {
     await deleteFile(objectPath);
 
     // Delete from database
+    // Use the object ID instead of the composite key with null versionId
     await prisma.object.delete({
       where: {
-        bucketId_key: {
-          bucketId: bucket.id,
-          key,
-        },
+        id: object.id,
       },
     });
 
@@ -628,9 +764,13 @@ app.delete('/:bucket/*', s3AuthMiddleware, async (c) => {
 
     logger.info({ userId: user.id, bucketName, key }, 'Object deleted via S3 API');
 
-    return c.text('', 204);
+    return c.body(null, 204);
   } catch (error) {
-    logger.error({ error }, 'Delete object error');
+    logger.error({
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Delete object error');
     const xml = buildErrorXml(
       S3ErrorCodes.InternalError,
       'We encountered an internal error. Please try again.'
@@ -641,4 +781,4 @@ app.delete('/:bucket/*', s3AuthMiddleware, async (c) => {
   }
 });
 
-export default app;
+} // end registerS3ObjectRoutes

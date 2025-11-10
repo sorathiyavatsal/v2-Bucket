@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Bell, Search, User, LogOut, Settings } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
@@ -10,10 +11,29 @@ import {
   DropdownLabel,
   DropdownSeparator,
 } from '@/components/ui/Dropdown';
+import { useAuth } from '@/components/providers/AuthProvider';
+import { signOut } from '@/lib/auth-client';
 
 export function Header() {
+  const router = useRouter();
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const notificationCount = 3;
+
+  const handleLogout = async () => {
+    await signOut();
+    router.push('/');
+  };
+
+  // Get user initials for avatar
+  const getUserInitials = () => {
+    if (!user) return 'U';
+    if (user.name) {
+      const names = user.name.split(' ');
+      return names.map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    }
+    return user.email[0].toUpperCase();
+  };
 
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
@@ -94,11 +114,11 @@ export function Header() {
           trigger={
             <button className="flex items-center gap-2 rounded-md p-2 hover:bg-accent">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-                A
+                {getUserInitials()}
               </div>
               <div className="hidden text-left sm:block">
-                <p className="text-sm font-medium">Admin User</p>
-                <p className="text-xs text-muted-foreground">admin@v2bucket.com</p>
+                <p className="text-sm font-medium">{user?.name || 'User'}</p>
+                <p className="text-xs text-muted-foreground">{user?.email}</p>
               </div>
             </button>
           }
@@ -114,7 +134,7 @@ export function Header() {
             <span>Settings</span>
           </DropdownItem>
           <DropdownSeparator />
-          <DropdownItem destructive>
+          <DropdownItem destructive onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
             <span>Log out</span>
           </DropdownItem>

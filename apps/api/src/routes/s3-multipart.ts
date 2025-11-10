@@ -32,28 +32,23 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { writeFile, unlink } from 'fs/promises';
 
-const app = new Hono<AppEnv>();
+/**
+ * Register S3 multipart routes directly on the main app
+ */
+export function registerS3MultipartRoutes(app: Hono<AppEnv>) {
 
 /**
  * Helper: Write request body to temporary file
  */
-async function writeBodyToTemp(body: ReadableStream<Uint8Array> | null): Promise<string> {
+async function writeBodyToTemp(body: ArrayBuffer | null): Promise<string> {
   if (!body) {
     throw new Error('No request body');
   }
 
   const tempPath = join(tmpdir(), `s3-part-${randomBytes(16).toString('hex')}`);
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
 
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-
-    const buffer = Buffer.concat(chunks);
+    const buffer = Buffer.from(body);
     await writeFile(tempPath, buffer);
     return tempPath;
   } catch (error) {
@@ -68,9 +63,9 @@ async function writeBodyToTemp(body: ReadableStream<Uint8Array> | null): Promise
 }
 
 /**
- * Initiate multipart upload - POST /:bucket/:key?uploads
+ * Initiate multipart upload - POST /api/s3/:bucket/:key?uploads
  */
-app.post('/:bucket/*', s3AuthMiddleware, async (c) => {
+app.post('/api/s3/:bucket/*', s3AuthMiddleware, async (c, next) => {
   try {
     const bucketName = c.req.param('bucket');
     const key = c.req.param('*');
@@ -79,13 +74,9 @@ app.post('/:bucket/*', s3AuthMiddleware, async (c) => {
     // Check for ?uploads query parameter
     const url = new URL(c.req.url);
     if (!url.searchParams.has('uploads')) {
-      const xml = buildErrorXml(
-        S3ErrorCodes.InvalidArgument,
-        'Missing uploads query parameter'
-      );
-      return c.text(xml, 400, {
-        'Content-Type': 'application/xml',
-      });
+      // Not an initiate multipart upload request
+      // Pass to next middleware/route
+      return await next();
     }
 
     if (!key) {
@@ -194,7 +185,7 @@ app.post('/:bucket/*', s3AuthMiddleware, async (c) => {
 /**
  * Upload part or complete/abort multipart upload - PUT /:bucket/:key?uploadId=...
  */
-app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
+app.put('/api/s3/:bucket/*', s3AuthMiddleware, async (c, next) => {
   try {
     const bucketName = c.req.param('bucket');
     const key = c.req.param('*');
@@ -205,7 +196,8 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
 
     if (!uploadId) {
       // This is handled by s3-object.ts (regular PUT)
-      return c.text('', 404);
+      // Pass to next middleware/route instead of returning 404
+      return await next();
     }
 
     const partNumberParam = url.searchParams.get('partNumber');
@@ -283,7 +275,8 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
       const size = parseInt(contentLength, 10);
 
       // Write request body to temporary file
-      const tempPath = await writeBodyToTemp(c.req.raw.body);
+      const bodyBuffer = await c.req.arrayBuffer();
+      const tempPath = await writeBodyToTemp(bodyBuffer);
 
       try {
         // Save part
@@ -366,7 +359,7 @@ app.put('/:bucket/*', s3AuthMiddleware, async (c) => {
 /**
  * Complete or abort multipart upload, or list parts - POST/DELETE/GET /:bucket/:key?uploadId=...
  */
-app.on(['POST', 'DELETE', 'GET'], '/:bucket/*', s3AuthMiddleware, async (c) => {
+app.on(['POST', 'DELETE', 'GET'], '/api/s3/:bucket/*', s3AuthMiddleware, async (c, next) => {
   try {
     const bucketName = c.req.param('bucket');
     const key = c.req.param('*');
@@ -378,7 +371,8 @@ app.on(['POST', 'DELETE', 'GET'], '/:bucket/*', s3AuthMiddleware, async (c) => {
 
     if (!uploadId) {
       // Not a multipart operation
-      return c.text('', 404);
+      // Pass to next middleware/route instead of returning 404
+      return await next();
     }
 
     const multipartUpload = await prisma.multipartUpload.findUnique({
@@ -448,9 +442,10 @@ app.on(['POST', 'DELETE', 'GET'], '/:bucket/*', s3AuthMiddleware, async (c) => {
       // Check if object already exists
       const existingObject = await prisma.object.findUnique({
         where: {
-          bucketId_key: {
+          bucketId_key_versionId: {
             bucketId: multipartUpload.bucketId,
             key,
+            versionId: null,
           },
         },
       });
@@ -465,9 +460,10 @@ app.on(['POST', 'DELETE', 'GET'], '/:bucket/*', s3AuthMiddleware, async (c) => {
       // Create or update object in database
       await prisma.object.upsert({
         where: {
-          bucketId_key: {
+          bucketId_key_versionId: {
             bucketId: multipartUpload.bucketId,
             key,
+            versionId: null,
           },
         },
         create: {
@@ -559,7 +555,7 @@ app.on(['POST', 'DELETE', 'GET'], '/:bucket/*', s3AuthMiddleware, async (c) => {
         uploadId,
       }, 'Multipart upload aborted via S3 API');
 
-      return c.text('', 204);
+      return c.body(null, 204);
     } else if (method === 'GET') {
       // List parts
       const maxPartsParam = url.searchParams.get('max-parts');
@@ -615,7 +611,7 @@ app.on(['POST', 'DELETE', 'GET'], '/:bucket/*', s3AuthMiddleware, async (c) => {
 /**
  * List multipart uploads - GET /:bucket?uploads
  */
-app.get('/:bucket', s3AuthMiddleware, async (c) => {
+app.get('/api/s3/:bucket', s3AuthMiddleware, async (c, next) => {
   try {
     const bucketName = c.req.param('bucket');
     const user = c.get('user');
@@ -625,7 +621,8 @@ app.get('/:bucket', s3AuthMiddleware, async (c) => {
     // Check for ?uploads query parameter
     if (!url.searchParams.has('uploads')) {
       // This is handled by s3-bucket.ts (list objects)
-      return c.text('', 404);
+      // Pass to next middleware/route instead of returning 404
+      return await next();
     }
 
     const bucket = await prisma.bucket.findUnique({
@@ -709,4 +706,4 @@ app.get('/:bucket', s3AuthMiddleware, async (c) => {
   }
 });
 
-export default app;
+} // end registerS3MultipartRoutes

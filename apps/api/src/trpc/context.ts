@@ -3,6 +3,7 @@ import { Context as HonoContext } from 'hono';
 import { prisma } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { logger } from '../lib/logger.js';
+import { auth } from '../lib/auth.js';
 
 export interface User {
   id: string;
@@ -43,29 +44,53 @@ export async function createContext({ c }: { c: HonoContext }) {
 
   const userAgent = c.req.header('user-agent') || 'unknown';
 
-  // Try to get session from token if not already set
+  // Try to get session from Better Auth or Bearer token if not already set
   let contextUser = user;
   let contextSession = session;
 
   if (!contextUser) {
-    // Try to get session from Bearer token
-    const authHeader = c.req.header('authorization');
-    if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
+    // First, try to get session from Better Auth cookies
+    try {
+      const betterAuthSession = await auth.api.getSession({
+        headers: c.req.raw.headers,
+      });
 
-      try {
-        const sessionData = await prisma.session.findUnique({
-          where: { token },
-          include: { user: true },
+      if (betterAuthSession?.user && betterAuthSession?.session) {
+        // Better Auth returns basic user info - fetch full user from database
+        const fullUser = await prisma.user.findUnique({
+          where: { id: betterAuthSession.user.id },
         });
 
-        if (sessionData && sessionData.expiresAt > new Date()) {
-          contextSession = sessionData;
-          contextUser = sessionData.user;
+        if (fullUser) {
+          contextUser = fullUser as any;
+          contextSession = betterAuthSession.session as any;
         }
-      } catch (error) {
-        // Session lookup failed, continue without auth
-        logger.debug({ error }, 'Session lookup failed');
+      }
+    } catch (error) {
+      // Better Auth session lookup failed, try Bearer token
+      logger.debug({ error }, 'Better Auth session lookup failed, trying Bearer token');
+    }
+
+    // If no Better Auth session, try Bearer token
+    if (!contextUser) {
+      const authHeader = c.req.header('authorization');
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+
+        try {
+          const sessionData = await prisma.session.findUnique({
+            where: { token },
+            include: { user: true },
+          });
+
+          if (sessionData && sessionData.expiresAt > new Date()) {
+            contextSession = sessionData;
+            contextUser = sessionData.user;
+          }
+        } catch (error) {
+          // Session lookup failed, continue without auth
+          logger.debug({ error }, 'Session lookup failed');
+        }
       }
     }
   }

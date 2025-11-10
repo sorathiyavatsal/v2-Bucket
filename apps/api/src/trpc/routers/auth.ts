@@ -12,6 +12,19 @@ import { logger } from '../../lib/logger.js';
  */
 export const authRouter = router({
   /**
+   * Check if there are any users in the system
+   * Used to show "first user will be admin" message
+   */
+  hasUsers: publicProcedure
+    .query(async () => {
+      const userCount = await prisma.user.count();
+      return {
+        hasUsers: userCount > 0,
+        userCount,
+      };
+    }),
+
+  /**
    * Register a new user
    */
   register: publicProcedure

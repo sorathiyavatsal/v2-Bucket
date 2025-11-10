@@ -106,7 +106,7 @@ export function BucketCard({ bucket, onDelete }: BucketCardProps) {
 
       <CardFooter className="flex items-center justify-between border-t pt-4">
         <span className="text-xs text-muted-foreground">
-          Created {bucket.createdAt.toLocaleDateString()}
+          Created {new Date(bucket.createdAt).toLocaleDateString()}
         </span>
         <Link href={`/app/buckets/${bucket.name}`}>
           <Button variant="outline" size="sm">

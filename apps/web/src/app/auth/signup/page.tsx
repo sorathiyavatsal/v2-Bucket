@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Alert, AlertDescription } from '@/components/ui/Alert';
 import { Database } from 'lucide-react';
+import { trpc } from '@/lib/trpc';
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -19,6 +20,9 @@ export default function SignUpPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState('');
+
+  // Check if there are any users in the system
+  const { data: userCheck } = trpc.auth.hasUsers.useQuery();
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -58,14 +62,23 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
-      // TODO: Implement actual sign up with better-auth
-      // For now, simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { signUp } = await import('@/lib/auth-client');
 
-      // Redirect to login after successful signup
-      router.push('/?signup=success');
-    } catch (error) {
-      setServerError('Failed to create account. Please try again.');
+      await signUp.email({
+        email: formData.email,
+        password: formData.password,
+        name: formData.name,
+      }, {
+        onSuccess: () => {
+          // Redirect to login after successful signup
+          router.push('/?signup=success');
+        },
+        onError: (ctx) => {
+          setServerError(ctx.error.message || 'Failed to create account');
+        },
+      });
+    } catch (error: any) {
+      setServerError(error.message || 'Failed to create account. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -92,6 +105,15 @@ export default function SignUpPage() {
 
           {/* Sign Up Card */}
           <div className="rounded-lg bg-white p-8 shadow-xl dark:bg-gray-800">
+            {/* First User Info - Only show if no users exist */}
+            {userCheck && !userCheck.hasUsers && (
+              <div className="mb-6 rounded-md bg-blue-50 p-4 dark:bg-blue-900/20">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Note:</strong> The first user to register will automatically be granted administrator privileges.
+                </p>
+              </div>
+            )}
+
             {serverError && (
               <Alert variant="error" className="mb-6">
                 <AlertDescription>{serverError}</AlertDescription>

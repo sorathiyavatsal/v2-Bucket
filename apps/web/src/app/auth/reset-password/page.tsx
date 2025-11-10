@@ -61,18 +61,26 @@ function ResetPasswordForm() {
     setIsLoading(true);
 
     try {
-      // TODO: Implement actual password reset with better-auth
-      // For now, simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { resetPassword } = await import('@/lib/auth-client');
 
-      setIsSuccess(true);
+      await resetPassword({
+        token,
+        newPassword: formData.password,
+      }, {
+        onSuccess: () => {
+          setIsSuccess(true);
 
-      // Redirect to login after 2 seconds
-      setTimeout(() => {
-        router.push('/?reset=success');
-      }, 2000);
-    } catch (error) {
-      setServerError('Failed to reset password. Please try again.');
+          // Redirect to login after 2 seconds
+          setTimeout(() => {
+            router.push('/?reset=success');
+          }, 2000);
+        },
+        onError: (ctx) => {
+          setServerError(ctx.error.message || 'Failed to reset password');
+        },
+      });
+    } catch (error: any) {
+      setServerError(error.message || 'Failed to reset password. Please try again.');
     } finally {
       setIsLoading(false);
     }

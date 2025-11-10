@@ -24,40 +24,12 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { Plus, Search, MoreVertical, Trash2, Copy, Eye, EyeOff, Key } from 'lucide-react';
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/Dropdown';
-
-// Mock data
-const mockAccessKeys = [
-  {
-    id: '1',
-    accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
-    description: 'Production API Access',
-    status: 'active' as const,
-    createdAt: new Date('2024-01-15'),
-    lastUsedAt: new Date('2025-01-07'),
-  },
-  {
-    id: '2',
-    accessKeyId: 'AKIAI44QH8DHBEXAMPLE',
-    description: 'Development Environment',
-    status: 'active' as const,
-    createdAt: new Date('2024-06-20'),
-    lastUsedAt: new Date('2025-01-06'),
-  },
-  {
-    id: '3',
-    accessKeyId: 'AKIAJKCCMN6FQEXAMPLE',
-    description: 'CI/CD Pipeline',
-    status: 'inactive' as const,
-    createdAt: new Date('2024-09-10'),
-    lastUsedAt: new Date('2024-12-15'),
-  },
-];
+import { trpc } from '@/lib/trpc';
 
 export default function AccessKeysPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
   const [isSecretDialogOpen, setIsSecretDialogOpen] = useState(false);
-  const [accessKeys] = useState(mockAccessKeys);
   const [description, setDescription] = useState('');
   const [generatedKey, setGeneratedKey] = useState<{
     accessKeyId: string;
@@ -65,25 +37,46 @@ export default function AccessKeysPage() {
   } | null>(null);
   const [showSecret, setShowSecret] = useState(false);
 
-  const filteredKeys = accessKeys.filter(
+  // Fetch access keys
+  const { data: accessKeys, refetch } = trpc.accessKey.list.useQuery({
+    includeInactive: true,
+  });
+
+  // Create access key mutation
+  const createKeyMutation = trpc.accessKey.create.useMutation({
+    onSuccess: (data) => {
+      setGeneratedKey({
+        accessKeyId: data.accessKey.accessKeyId,
+        secretAccessKey: data.accessKey.secretAccessKey,
+      });
+      setIsGenerateDialogOpen(false);
+      setIsSecretDialogOpen(true);
+      setDescription('');
+      refetch(); // Refresh the list
+    },
+  });
+
+  // Delete access key mutation
+  const deleteKeyMutation = trpc.accessKey.delete.useMutation({
+    onSuccess: () => {
+      refetch(); // Refresh the list
+    },
+  });
+
+  const filteredKeys = accessKeys?.filter(
     (key) =>
       key.accessKeyId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      key.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+      (key.name?.toLowerCase() || '').includes(searchQuery.toLowerCase())
+  ) || [];
 
   const handleGenerateKey = async () => {
-    // TODO: Implement tRPC mutation
-    console.log('Generating access key with description:', description);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    createKeyMutation.mutate({ name: description });
+  };
 
-    // Simulate generated key
-    setGeneratedKey({
-      accessKeyId: 'AKIAIOSFODNN7NEWKEY',
-      secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-    });
-    setIsGenerateDialogOpen(false);
-    setIsSecretDialogOpen(true);
-    setDescription('');
+  const handleDeleteKey = (id: string) => {
+    if (confirm('Are you sure you want to delete this access key? This action cannot be undone.')) {
+      deleteKeyMutation.mutate({ id });
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -158,20 +151,20 @@ export default function AccessKeysPage() {
                     {key.accessKeyId}
                   </code>
                 </TableCell>
-                <TableCell className="font-medium">{key.description}</TableCell>
+                <TableCell className="font-medium">{key.name}</TableCell>
                 <TableCell>
                   <Badge
-                    variant={key.status === 'active' ? 'success' : 'secondary'}
+                    variant={key.isActive ? 'success' : 'secondary'}
                     size="sm"
                   >
-                    {key.status}
+                    {key.isActive ? 'active' : 'inactive'}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {key.createdAt.toLocaleDateString()}
+                  {new Date(key.createdAt).toLocaleDateString()}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {key.lastUsedAt.toLocaleDateString()}
+                  {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleDateString() : 'Never'}
                 </TableCell>
                 <TableCell>
                   <Dropdown
@@ -187,9 +180,9 @@ export default function AccessKeysPage() {
                       <span>Copy Access Key ID</span>
                     </DropdownItem>
                     <DropdownSeparator />
-                    <DropdownItem destructive>
+                    <DropdownItem destructive onClick={() => handleDeleteKey(key.id)}>
                       <Trash2 className="mr-2 h-4 w-4" />
-                      <span>Revoke Key</span>
+                      <span>Delete Key</span>
                     </DropdownItem>
                   </Dropdown>
                 </TableCell>

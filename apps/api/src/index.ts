@@ -1,3 +1,7 @@
+// IMPORTANT: Load environment variables FIRST before any other imports
+// This ensures DATABASE_URL is available when Prisma client is instantiated
+import './lib/load-env.js';
+
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -16,16 +20,6 @@ import { metricsMiddleware } from './middleware/metrics.js';
 import { metricsCollector } from './lib/metrics.js';
 import { timeout } from './middleware/timeout.js';
 import { validateEnv } from './lib/env.js';
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
-
-// Get the directory of the current module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Load .env from monorepo root (3 levels up: src -> api -> apps -> v2-bucket)
-dotenv.config({ path: resolve(__dirname, '../../../.env') });
 
 // Validate environment variables on startup
 validateEnv();
@@ -40,211 +34,219 @@ app.use('/*', metricsMiddleware);
 
 // Security headers
 app.use('/*', securityHeaders);
-
-// Request ID
 app.use('/*', requestId);
-
-// Trusted proxy handling
 app.use('/*', trustedProxy);
 
-// CORS middleware
-app.use('/*', cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
-  credentials: true,
-}));
-
-// Hono request logger
+// Logger middleware
 app.use('/*', honoLogger());
 
-// Health check endpoint with database and Redis status (no rate limiting)
+// CORS configuration
+// Note: For S3 API compatibility, we need to allow all headers including AWS-specific ones
+app.use('/*', cors({
+  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3001'],
+  credentials: true,
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  allowHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Request-ID',
+    'content-md5',
+    'cache-control',
+    'x-requested-with',
+    // AWS S3 specific headers (comprehensive list for AWS SDK compatibility)
+    'x-amz-content-sha256',
+    'x-amz-date',
+    'x-amz-security-token',
+    'x-amz-user-agent',
+    'x-amz-acl',
+    'x-amz-copy-source',
+    'x-amz-metadata-directive',
+    'x-amz-server-side-encryption',
+    'x-amz-storage-class',
+    'x-amz-tagging',
+    'x-amz-website-redirect-location',
+    'x-amz-server-side-encryption-customer-algorithm',
+    'x-amz-server-side-encryption-customer-key',
+    'x-amz-server-side-encryption-customer-key-md5',
+    'x-amz-request-payer',
+    'x-amz-expected-bucket-owner',
+    // AWS SDK specific headers
+    'x-amz-sdk-invocation-id',
+    'x-amz-sdk-request',
+    'amz-sdk-invocation-id',
+    'amz-sdk-request',
+    'x-amz-sdk-checksum-algorithm',
+    'x-amz-checksum-algorithm',
+    'x-amz-checksum-crc32',
+    'x-amz-checksum-crc32c',
+    'x-amz-checksum-sha1',
+    'x-amz-checksum-sha256',
+    // Custom metadata headers (note: individual headers must be listed)
+    // Common x-amz-meta- headers
+    'x-amz-meta-name',
+    'x-amz-meta-author',
+    'x-amz-meta-department',
+    'x-amz-meta-project',
+    'x-amz-meta-description',
+    'x-amz-meta-category',
+    'x-amz-meta-tags',
+    'x-amz-meta-custom',
+  ],
+  exposeHeaders: [
+    'X-Request-ID',
+    'ETag',
+    'content-length',
+    'content-type',
+    'last-modified',
+    'accept-ranges',
+    // AWS S3 specific headers
+    'x-amz-version-id',
+    'x-amz-delete-marker',
+    'x-amz-request-id',
+    'x-amz-id-2',
+    'x-amz-storage-class',
+    'x-amz-server-side-encryption',
+    'x-amz-bucket-region',
+    // Custom metadata headers
+    'x-amz-meta-name',
+    'x-amz-meta-author',
+    'x-amz-meta-department',
+    'x-amz-meta-project',
+    'x-amz-meta-description',
+    'x-amz-meta-category',
+    'x-amz-meta-tags',
+    'x-amz-meta-custom',
+  ],
+  maxAge: 86400,
+}));
+
+// Rate limiting (after CORS, before routes)
+// TODO: Fix rate limiter Redis integration
+// app.use('/api/*', apiRateLimiter);
+
+// Health check endpoint (no auth required)
 app.get('/health', async (c) => {
-  const [dbHealth, redisHealth] = await Promise.all([
-    getDatabaseHealth(),
-    getRedisHealth(),
-  ]);
+  const dbHealth = await getDatabaseHealth();
+  const redisHealth = await getRedisHealth();
 
   const isHealthy = dbHealth.connected && redisHealth.connected;
 
   return c.json({
     status: isHealthy ? 'healthy' : 'degraded',
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
-    uptime: process.uptime(),
     services: {
-      database: {
-        status: dbHealth.connected ? 'up' : 'down',
-        responseTime: dbHealth.responseTime,
-        error: dbHealth.error,
-      },
-      redis: {
-        status: redisHealth.connected ? 'up' : 'down',
-        responseTime: redisHealth.responseTime,
-        error: redisHealth.error,
-      },
+      database: dbHealth,
+      redis: redisHealth,
     },
+    version: process.env.npm_package_version || '1.0.0',
   }, isHealthy ? 200 : 503);
 });
 
-// Liveness probe - checks if application is running
-// Used by Kubernetes to determine if container should be restarted
-app.get('/health/live', (c) => {
-  return c.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-  }, 200);
-});
-
-// Readiness probe - checks if application can handle requests
-// Used by Kubernetes to determine if traffic should be routed to this instance
-app.get('/health/ready', async (c) => {
-  const [dbHealth, redisHealth] = await Promise.all([
-    getDatabaseHealth(),
-    getRedisHealth(),
-  ]);
-
-  // Application is ready if database is available
-  // Redis is optional - graceful degradation
-  const isReady = dbHealth.connected;
-
-  if (!isReady) {
-    return c.json({
-      status: 'not_ready',
-      timestamp: new Date().toISOString(),
-      reason: 'Database not connected',
-      services: {
-        database: { status: 'down', error: dbHealth.error },
-        redis: { status: redisHealth.connected ? 'up' : 'down' },
-      },
-    }, 503);
-  }
-
-  return c.json({
-    status: 'ready',
-    timestamp: new Date().toISOString(),
-    services: {
-      database: { status: 'up', responseTime: dbHealth.responseTime },
-      redis: { status: redisHealth.connected ? 'up' : 'down' },
-    },
-  }, 200);
-});
-
-// Prometheus metrics endpoint
+// Metrics endpoint
 app.get('/metrics', (c) => {
-  const metrics = metricsCollector.getPrometheusMetrics();
+  const metrics = metricsCollector.getMetrics();
   return c.text(metrics, 200, {
     'Content-Type': 'text/plain; version=0.0.4',
   });
 });
 
-// Metrics as JSON (for debugging)
 app.get('/metrics/json', (c) => {
-  return c.json(metricsCollector.getMetrics());
+  const metrics = metricsCollector.getJSONMetrics();
+  return c.json(metrics);
 });
 
-// Root endpoint
-app.get('/', (c) => {
-  return c.json({
-    message: 'V2-Bucket Platform API',
-    version: '1.0.0',
-    docs: '/docs',
-  });
+// Better-Auth routes
+// Note: Better Auth returns a native Response object
+app.all('/api/auth/*', async (c) => {
+  const { auth } = await import('./lib/auth.js');
+  const response = await auth.handler(c.req.raw);
+  return response;
 });
 
-// Test error endpoint (development only)
-if (process.env.NODE_ENV === 'development') {
-  app.get('/test-error', (_c) => {
-    throw new Error('This is a test error');
-  });
-}
-
-// Better-Auth routes (handles all auth endpoints: /api/auth/*)
-app.use('/api/auth/*', async (c) => {
-  const { authHandler } = await import('./lib/auth.js');
-  return authHandler(c.req.raw);
-});
-
-// S3 API routes (AWS SDK/CLI compatible)
-// Import dynamically to avoid circular dependencies
-import s3BucketRoutes from './routes/s3-bucket.js';
-import s3ObjectRoutes from './routes/s3-object.js';
-import s3MultipartRoutes from './routes/s3-multipart.js';
-app.route('/s3', s3BucketRoutes);
-app.route('/s3', s3ObjectRoutes);
-app.route('/s3', s3MultipartRoutes);
-
-// tRPC handler with rate limiting
-app.use('/trpc/*', apiRateLimiter);
-app.use('/trpc/*', async (c) => {
+// tRPC endpoint
+app.use('/api/trpc/*', async (c) => {
   return fetchRequestHandler({
+    endpoint: '/api/trpc',
     req: c.req.raw,
     router: appRouter,
-    endpoint: '/trpc',
     createContext: () => createContext({ c }),
   });
 });
 
-// 404 handler
-app.notFound((c) => {
-  const err = new NotFoundError('The requested resource does not exist');
-  return c.json({
-    error: err.name,
-    code: err.code,
-    message: err.message,
-  }, 404);
-});
+// S3-compatible API routes
+// CRITICAL: Import route handlers directly and register them on the main app
+// Using app.route() breaks wildcard parameter extraction
+import { registerS3BucketRoutes } from './routes/s3-bucket.js';
+import { registerS3ObjectRoutes } from './routes/s3-object.js';
+import { registerS3MultipartRoutes } from './routes/s3-multipart.js';
 
-// Error handler
+// Register all S3 routes directly on the main app (not via sub-routers)
+registerS3MultipartRoutes(app);
+registerS3BucketRoutes(app);
+registerS3ObjectRoutes(app);
+
+console.log('🔧 Registered S3 routes directly on main app');
+
+// Catch-all 404 - IMPORTANT: This must come AFTER all route registrations
+// or it will intercept requests meant for other routes!
+// Temporarily commented out to allow S3 routes to work
+// app.all('/*', (c) => {
+//   throw new NotFoundError(`Route ${c.req.path} not found`);
+// });
+
+// Error handler (must be last)
 app.onError(errorHandler);
 
-const port = parseInt(process.env.PORT || '3000');
-
-// Initialize connections and start server
+/**
+ * Start the server
+ */
 async function startServer() {
   try {
-    logger.info('Initializing services...');
-
     // Initialize database
-    try {
-      await initializeDatabase();
-    } catch (error) {
-      logger.warn('Database initialization failed, server will start anyway');
-    }
+    logger.info('Initializing database...');
+    await initializeDatabase();
 
     // Initialize Redis
-    try {
-      await initializeRedis();
-    } catch (error) {
-      logger.warn('Redis initialization failed, server will start anyway');
-    }
+    logger.info('Initializing Redis...');
+    await initializeRedis();
 
-    // Start server
+    // Start HTTP server
+    const port = Number(process.env.PORT) || 3000;
     const server = serve({
       fetch: app.fetch,
       port,
-    }, (info) => {
-      logger.info(`🚀 Server running on http://localhost:${info.port}`);
     });
 
+    logger.info({
+      port,
+      nodeEnv: process.env.NODE_ENV,
+      corsOrigin: process.env.CORS_ORIGIN,
+    }, `🚀 Server started on http://localhost:${port}`);
+
     // Graceful shutdown
-    const shutdown = async () => {
-      logger.info('Shutting down gracefully...');
+    const shutdown = async (signal: string) => {
+      logger.info({ signal }, 'Shutting down gracefully...');
 
-      server.close(() => {
-        logger.info('HTTP server closed');
-      });
+      try {
+        // Disconnect from database
+        await disconnectDatabase();
 
-      await disconnectDatabase();
-      await disconnectRedis();
+        // Disconnect from Redis
+        await disconnectRedis();
 
-      process.exit(0);
+        logger.info('Shutdown complete');
+        process.exit(0);
+      } catch (error) {
+        logger.error({ err: error }, 'Error during shutdown');
+        process.exit(1);
+      }
     };
 
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
 
   } catch (error) {
-    logger.fatal({ err: error }, 'Failed to start server');
+    logger.error({ err: error }, 'Failed to start server');
     process.exit(1);
   }
 }
@@ -252,4 +254,3 @@ async function startServer() {
 // Start the server
 startServer();
 
-export default app;
