@@ -140,69 +140,67 @@ pnpm install
 
 3. **Set up environment variables**
 
-Create `.env` file in `apps/api/`:
+Create `.env` file in project root:
 ```env
 # Database
-DATABASE_URL="postgresql://postgres:password@localhost:5432/v2bucket"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5433/v2bucket"
 
-# MinIO
-MINIO_ENDPOINT="localhost"
-MINIO_PORT=9000
-MINIO_USE_SSL=false
-MINIO_ROOT_USER="minioadmin"
-MINIO_ROOT_PASSWORD="minioadmin"
+# Redis
+REDIS_URL="redis://localhost:6380"
 
-# Server
+# Storage
+STORAGE_PATH="/var/lib/v2bucket/storage"
+
+# API
 PORT=3000
 NODE_ENV=development
-
-# JWT
-JWT_SECRET="your-super-secret-jwt-key-change-in-production"
-JWT_EXPIRES_IN="7d"
-
-# CORS
 CORS_ORIGIN="http://localhost:3001"
 
-# Rate Limiting
-RATE_LIMIT_MAX=100
-RATE_LIMIT_TIME_WINDOW="1m"
-```
+# Authentication (Better-Auth)
+BETTER_AUTH_SECRET="your-super-secret-key-change-in-production"
+BETTER_AUTH_URL="http://localhost:3001"
 
-Create `.env.local` file in `apps/web/`:
-```env
-NEXT_PUBLIC_API_URL=http://localhost:3000
+# JWT (for S3 API compatibility)
+JWT_SECRET="your-jwt-secret-key-change-in-production"
+
+# Next.js (Web Dashboard)
+NEXT_PUBLIC_API_URL="http://localhost:3000"
 ```
 
 4. **Start development services**
 
-Start PostgreSQL and MinIO:
+Start PostgreSQL and Redis:
 ```bash
-docker-compose up -d
+docker-compose up -d postgres redis
 ```
 
 5. **Run database migrations**
 ```bash
-cd apps/api
+cd packages/database
+pnpm prisma generate
 pnpm prisma migrate dev
-pnpm prisma db seed  # Optional: seed with sample data
 ```
 
 6. **Start development servers**
 ```bash
 # From root directory
 pnpm dev
+
+# Or start services individually:
+# API: cd apps/api && pnpm dev
+# Web: cd apps/web && pnpm dev
 ```
 
 This will start:
 - API server at `http://localhost:3000`
 - Web dashboard at `http://localhost:3001`
+- API Health Check at `http://localhost:3000/health`
 
 ### Accessing the Dashboard
 
 1. Navigate to `http://localhost:3001`
-2. Default admin credentials (if seeded):
-   - Email: `admin@v2bucket.com`
-   - Password: `admin123`
+2. Create your first account (automatically becomes admin)
+3. Generate access keys for S3 API access
 
 ## Development
 
@@ -254,7 +252,7 @@ cd apps/web && pnpm lint
 ### Database Management
 
 ```bash
-cd apps/api
+cd packages/database
 
 # Create new migration
 pnpm prisma migrate dev --name migration-name
@@ -264,6 +262,9 @@ pnpm prisma migrate reset
 
 # Open Prisma Studio (database GUI)
 pnpm prisma studio
+
+# Generate Prisma Client
+pnpm prisma generate
 ```
 
 ## API Documentation
@@ -315,14 +316,14 @@ curl http://localhost:3000/metrics
 
 ### tRPC API
 
-The admin dashboard communicates with the API via tRPC. Example endpoints:
+The admin dashboard communicates with the API via tRPC. Example routers:
 
-- `test.hello` - Test endpoint
-- `test.echo` - Echo test endpoint
-- `buckets.list` - List all buckets
-- `buckets.create` - Create new bucket
-- `users.list` - List all users
-- `accessKeys.list` - List access keys
+- `auth.*` - Authentication (login, register, session management)
+- `buckets.*` - Bucket management (list, create, delete, update)
+- `objects.*` - Object operations (list, upload, download, delete)
+- `accessKeys.*` - Access key management (list, create, revoke)
+- `analytics.*` - Storage analytics and metrics
+- `webhooks.*` - Webhook configuration
 
 ## Deployment
 
@@ -361,23 +362,27 @@ kubectl apply -f k8s/ingress.yaml
 
 ### Environment Variables (Production)
 
-**API Server:**
 ```env
+# Node Environment
 NODE_ENV=production
-PORT=3000
-DATABASE_URL=postgresql://user:pass@postgres:5432/v2bucket
-MINIO_ENDPOINT=minio
-MINIO_PORT=9000
-MINIO_USE_SSL=false
-JWT_SECRET=<strong-random-secret>
-CORS_ORIGIN=https://your-domain.com
-RATE_LIMIT_MAX=1000
-RATE_LIMIT_TIME_WINDOW=1m
-```
 
-**Web Dashboard:**
-```env
-NODE_ENV=production
+# Database & Cache
+DATABASE_URL=postgresql://user:password@postgres:5432/v2bucket
+REDIS_URL=redis://redis:6379
+
+# Storage
+STORAGE_PATH=/var/lib/v2bucket/storage
+
+# API
+PORT=3000
+CORS_ORIGIN=https://your-domain.com
+
+# Authentication
+BETTER_AUTH_SECRET=<strong-random-secret-32-chars>
+BETTER_AUTH_URL=https://your-domain.com
+JWT_SECRET=<strong-random-secret>
+
+# Web Dashboard
 NEXT_PUBLIC_API_URL=https://api.your-domain.com
 ```
 
@@ -433,14 +438,15 @@ V2-Bucket implements security headers:
 ### Common Issues
 
 **Database connection failed**
-- Check PostgreSQL is running: `docker ps`
-- Verify DATABASE_URL is correct
-- Ensure database exists: `docker exec -it postgres psql -U postgres -c "\l"`
+- Check PostgreSQL is running: `docker ps | grep postgres`
+- Verify DATABASE_URL is correct in `.env`
+- Ensure database exists: `docker exec -it v2bucket-postgres psql -U postgres -c "\l"`
+- Check port mapping: PostgreSQL runs on port 5433 externally, 5432 internally
 
-**MinIO connection failed**
-- Check MinIO is running: `docker ps`
-- Verify MinIO credentials are correct
-- Check MinIO endpoint and port
+**Redis connection failed**
+- Check Redis is running: `docker ps | grep redis`
+- Verify REDIS_URL is correct in `.env`
+- Test connection: `docker exec v2bucket-redis redis-cli ping`
 
 **Port already in use**
 - Change PORT in `.env` file
@@ -493,10 +499,11 @@ For issues, questions, or feature requests, please open an issue on GitHub.
 ## Acknowledgments
 
 Built with modern open-source technologies:
-- [Fastify](https://www.fastify.io/) - Fast web framework
+- [Hono](https://hono.dev/) - Ultra-fast web framework
 - [Next.js](https://nextjs.org/) - React framework
 - [tRPC](https://trpc.io/) - Type-safe APIs
 - [Prisma](https://www.prisma.io/) - Next-generation ORM
-- [MinIO](https://min.io/) - S3-compatible storage
+- [Better-Auth](https://www.better-auth.com/) - Authentication framework
 - [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS
 - [Turborepo](https://turbo.build/) - High-performance build system
+- [Radix UI](https://www.radix-ui.com/) - Accessible UI components
