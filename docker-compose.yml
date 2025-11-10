@@ -10,15 +10,15 @@ x-common-variables: &common-variables
   BETTER_AUTH_SECRET: nmabMgr2dRhKIPPfYeCHJaf8pdyHbZ6q5oW37GvGRqA=
 
   # Public URLs (HTTPS for Tailscale Funnel)
-  BETTER_AUTH_URL: https://v2bucket.discus-likert.ts.net/api
+  BETTER_AUTH_URL: https://v2bucket.discus-likert.ts.net
   CORS_ORIGIN: https://v2bucket.discus-likert.ts.net
-  NEXT_PUBLIC_API_URL: https://v2bucket.discus-likert.ts.net/api
+  NEXT_PUBLIC_API_URL: https://v2bucket.discus-likert.ts.net
 
   # Git Repository
   GIT_REPO: https://github.com/sorathiyavatsal/v2-Bucket.git
   GIT_BRANCH: main
 
-  # Storage
+  # Storage (path inside container)
   STORAGE_PATH: /storage
 
   # Tailscale Configuration
@@ -120,7 +120,12 @@ services:
       <<: *common-variables
     volumes:
       - build-cache:/build:ro
-      - storage-data:/storage
+      # Mount storage directory from NAS filesystem
+      # Files uploaded via S3 API will be stored here and visible on the NAS
+      # Change this path to match your NAS location:
+      #   Synology: /volume1/docker/v2-bucket/storage
+      #   QNAP: /share/Container/v2-bucket/storage
+      - ./storage:/storage
     networks:
       - v2bucket-network
     ports:
@@ -261,9 +266,7 @@ volumes:
   redis-data:
     driver: local
     name: v2bucket-redis-data
-  storage-data:
-    driver: local
-    name: v2bucket-storage-data
+  # storage-data volume removed - now using bind mount to NAS filesystem
   build-cache:
     driver: local
     name: v2bucket-build-cache

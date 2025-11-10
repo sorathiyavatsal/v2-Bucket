@@ -20,6 +20,7 @@ Complete documentation for the V2-Bucket S3-compatible object storage platform.
 
 - **[API Reference](API.md)** - Complete API documentation for S3 and tRPC endpoints
 - **[Development Guide](DEVELOPMENT.md)** - Development workflow, conventions, and best practices
+- **[Storage Configuration](STORAGE_CONFIGURATION.md)** - Configure storage location on NAS filesystem
 - **[Native Storage Implementation](NATIVE_STORAGE_IMPLEMENTATION.md)** - Technical details of the native filesystem storage
 - **[Project Summary](PROJECT_SUMMARY.md)** - Complete project summary with all implemented features
 
