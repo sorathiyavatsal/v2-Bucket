@@ -23,8 +23,9 @@ export const auth = betterAuth({
   },
 
   // Security
-  secret: process.env.AUTH_SECRET || 'development-secret-key-change-in-production',
-  baseURL: process.env.AUTH_URL || 'http://localhost:3000',
+  secret: process.env.AUTH_SECRET || process.env.BETTER_AUTH_SECRET || 'development-secret-key-change-in-production',
+  baseURL: process.env.AUTH_URL || process.env.BETTER_AUTH_URL || 'http://localhost:3000',
+  basePath: '/auth', // Use /auth as base path (Tailscale strips /api prefix)
   trustedOrigins: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3001'],
 
   // Advanced options
