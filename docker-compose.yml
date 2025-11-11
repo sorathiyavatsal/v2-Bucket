@@ -10,8 +10,9 @@ x-common-variables: &common-variables
   BETTER_AUTH_SECRET: nmabMgr2dRhKIPPfYeCHJaf8pdyHbZ6q5oW37GvGRqA=
 
   # Public URLs (HTTPS for Tailscale Funnel)
+  # API and Web on same domain - API handles backend, requests pass through
   BETTER_AUTH_URL: https://v2bucket.discus-likert.ts.net
-  CORS_ORIGIN: https://v2bucket.discus-likert.ts.net
+  CORS_ORIGIN: https://v2bucket.discus-likert.ts.net,http://localhost:3001
   NEXT_PUBLIC_API_URL: https://v2bucket.discus-likert.ts.net
 
   # Git Repository
@@ -247,6 +248,11 @@ services:
     restart: unless-stopped
     privileged: true
     network_mode: host
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
     environment:
       - TS_AUTHKEY=tskey-auth-km6C98WufH11CNTRL-LJKhA7xsZqEeWLeBrUPopESimLPxPoiv
       - TS_STATE_DIR=/var/lib/tailscale
@@ -257,7 +263,54 @@ services:
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
-    command: tailscaled
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        set -e
+        echo "Starting Tailscale daemon..."
+        tailscaled --state=/var/lib/tailscale/tailscaled.state &
+        TAILSCALED_PID=$$!
+
+        echo "Waiting for Tailscale to start..."
+        sleep 5
+
+        echo "Bringing up Tailscale..."
+        tailscale up --authkey=$${TS_AUTHKEY} --hostname=v2bucket --accept-routes || true
+
+        echo "Waiting for API and Web to be ready..."
+        sleep 10
+
+        echo "Configuring Tailscale Serve..."
+
+        # Reset any existing configuration
+        tailscale serve reset || true
+
+        # Configure using the new Tailscale CLI syntax
+        # Serve Web UI on root path (no path argument for root)
+        echo "Setting up Web UI at root..."
+        tailscale serve --bg http://127.0.0.1:3001
+
+        # Add API routes with set-path (separate commands)
+        echo "Setting up API routes..."
+        tailscale serve --set-path=/api --bg http://127.0.0.1:3000
+
+        echo "Setting up health check..."
+        tailscale serve --set-path=/health --bg http://127.0.0.1:3000
+
+        echo "Setting up metrics..."
+        tailscale serve --set-path=/metrics --bg http://127.0.0.1:3000
+
+        echo "Enabling Tailscale Funnel for public access..."
+        tailscale funnel --bg 443 on
+
+        echo "Tailscale configuration complete!"
+        echo "Current serve status:"
+        tailscale serve status
+
+        echo "Waiting for tailscaled to exit..."
+        wait $$TAILSCALED_PID
 
 volumes:
   postgres-data:

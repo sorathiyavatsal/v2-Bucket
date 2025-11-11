@@ -15,6 +15,7 @@ Complete documentation for the V2-Bucket S3-compatible object storage platform.
 - **[Docker Deployment](DEPLOYMENT.md)** - Complete Docker deployment guide with Tailscale Funnel
 - **[NAS Deployment](NAS_DEPLOYMENT.md)** - Deploy on Synology/QNAP NAS devices
 - **[Deploy from Git](NAS_DEPLOY_FROM_GIT.md)** - Deploy directly from GitHub repository
+- **[Tailscale Auto Setup](../TAILSCALE_AUTO_SETUP.md)** - Automatic Tailscale Serve and Funnel configuration
 
 ### Technical Documentation
 

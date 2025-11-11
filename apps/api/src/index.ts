@@ -163,10 +163,27 @@ app.all('/api/auth/*', async (c) => {
   return response;
 });
 
+// Better-Auth routes (alias without /api prefix for Tailscale Serve path stripping)
+app.all('/auth/*', async (c) => {
+  const { auth } = await import('./lib/auth.js');
+  const response = await auth.handler(c.req.raw);
+  return response;
+});
+
 // tRPC endpoint
 app.use('/api/trpc/*', async (c) => {
   return fetchRequestHandler({
     endpoint: '/api/trpc',
+    req: c.req.raw,
+    router: appRouter,
+    createContext: () => createContext({ c }),
+  });
+});
+
+// tRPC endpoint (alias without /api prefix for Tailscale Serve path stripping)
+app.use('/trpc/*', async (c) => {
+  return fetchRequestHandler({
+    endpoint: '/trpc',
     req: c.req.raw,
     router: appRouter,
     createContext: () => createContext({ c }),
