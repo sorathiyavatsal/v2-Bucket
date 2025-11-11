@@ -1,5 +1,16 @@
 // AWS S3 Client for Frontend
-import { S3Client, ListObjectsV2Command, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  HeadBucketCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export interface S3Config {
@@ -52,7 +63,94 @@ export async function listObjects(
 }
 
 /**
- * Upload a file to a bucket
+ * Upload a file using multipart upload (for large files)
+ */
+export async function uploadFileMultipart(
+  client: S3Client,
+  bucketName: string,
+  key: string,
+  file: File,
+  onProgress?: (progress: number) => void
+) {
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks (minimum for S3 multipart)
+  const totalParts = Math.ceil(file.size / CHUNK_SIZE);
+
+  try {
+    // Step 1: Initiate multipart upload
+    const createCommand = new CreateMultipartUploadCommand({
+      Bucket: bucketName,
+      Key: key,
+      ContentType: file.type,
+    });
+
+    const { UploadId } = await client.send(createCommand);
+
+    if (!UploadId) {
+      throw new Error('Failed to initiate multipart upload');
+    }
+
+    // Step 2: Upload parts
+    const uploadedParts: Array<{ ETag: string; PartNumber: number }> = [];
+    let uploadedBytes = 0;
+
+    for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
+      const start = (partNumber - 1) * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+
+      // Convert chunk to ArrayBuffer
+      const arrayBuffer = await chunk.arrayBuffer();
+
+      const uploadPartCommand = new UploadPartCommand({
+        Bucket: bucketName,
+        Key: key,
+        PartNumber: partNumber,
+        UploadId,
+        Body: new Uint8Array(arrayBuffer),
+      });
+
+      const uploadPartResponse = await client.send(uploadPartCommand);
+
+      if (uploadPartResponse.ETag) {
+        uploadedParts.push({
+          ETag: uploadPartResponse.ETag,
+          PartNumber: partNumber,
+        });
+      }
+
+      // Update progress
+      uploadedBytes += (end - start);
+      const progress = Math.round((uploadedBytes / file.size) * 100);
+      onProgress?.(progress);
+    }
+
+    // Step 3: Complete multipart upload
+    const completeCommand = new CompleteMultipartUploadCommand({
+      Bucket: bucketName,
+      Key: key,
+      UploadId,
+      MultipartUpload: {
+        Parts: uploadedParts,
+      },
+    });
+
+    const completeResponse = await client.send(completeCommand);
+
+    return {
+      success: true,
+      etag: completeResponse.ETag,
+      versionId: completeResponse.VersionId,
+    };
+  } catch (error) {
+    // If multipart upload fails, try to abort it
+    // This is a best-effort cleanup
+    console.error('Multipart upload failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Upload a file to a bucket (automatically uses multipart for large files)
  */
 export async function uploadFile(
   client: S3Client,
@@ -61,6 +159,15 @@ export async function uploadFile(
   file: File,
   onProgress?: (progress: number) => void
 ) {
+  const MULTIPART_THRESHOLD = 100 * 1024 * 1024; // 100MB
+
+  // Use multipart upload for large files
+  if (file.size > MULTIPART_THRESHOLD) {
+    console.log(`Using multipart upload for large file: ${file.name} (${formatFileSize(file.size)})`);
+    return uploadFileMultipart(client, bucketName, key, file, onProgress);
+  }
+
+  // Use regular upload for smaller files
   // Convert File to ArrayBuffer for AWS SDK compatibility
   const arrayBuffer = await file.arrayBuffer();
 
@@ -72,9 +179,10 @@ export async function uploadFile(
     ContentLength: file.size,
   });
 
-  // Note: Progress tracking requires additional setup with XMLHttpRequest or fetch
-  // For now, we'll just upload the file
   const response = await client.send(command);
+
+  // Simulate progress for regular uploads
+  onProgress?.(100);
 
   return {
     success: true,

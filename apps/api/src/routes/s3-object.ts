@@ -53,6 +53,66 @@ async function writeBodyToTemp(body: ArrayBuffer | null): Promise<string> {
 }
 
 /**
+ * Helper: Stream request body to temporary file (for large files)
+ */
+async function streamBodyToTemp(request: Request): Promise<string> {
+  if (!request.body) {
+    throw new Error('No request body');
+  }
+
+  const tempPath = join(tmpdir(), `s3-upload-${randomBytes(16).toString('hex')}`);
+
+  try {
+    const { createWriteStream } = await import('fs');
+    const writeStream = createWriteStream(tempPath);
+
+    const reader = request.body.getReader();
+
+    return new Promise((resolve, reject) => {
+      writeStream.on('error', (error) => {
+        reader.cancel();
+        reject(error);
+      });
+
+      writeStream.on('finish', () => {
+        resolve(tempPath);
+      });
+
+      async function pump() {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) {
+              writeStream.end();
+              break;
+            }
+
+            if (!writeStream.write(value)) {
+              // Wait for drain event before continuing
+              await new Promise((resolve) => writeStream.once('drain', resolve));
+            }
+          }
+        } catch (error) {
+          writeStream.destroy();
+          reject(error);
+        }
+      }
+
+      pump();
+    });
+  } catch (error) {
+    // Clean up temp file on error
+    try {
+      await unlink(tempPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error;
+  }
+}
+
+/**
  * Check if object exists (HEAD) - HEAD /api/s3/:bucket/:key
  */
 app.on('HEAD', '/api/s3/:bucket/*', s3AuthMiddleware, async (c) => {
@@ -519,8 +579,19 @@ app.put('/api/s3/:bucket/*', s3AuthMiddleware, async (c) => {
     }
 
     // Write request body to temporary file
-    const bodyBuffer = await c.req.arrayBuffer();
-    const tempPath = await writeBodyToTemp(bodyBuffer);
+    // For large files (>100MB), use streaming to avoid memory issues
+    const STREAMING_THRESHOLD = 100 * 1024 * 1024; // 100MB
+    let tempPath: string;
+
+    if (size > STREAMING_THRESHOLD) {
+      // Stream large files directly to disk
+      logger.info({ key, size, bucket: bucketName }, 'Using streaming upload for large file (>100MB)');
+      tempPath = await streamBodyToTemp(c.req.raw);
+    } else {
+      // Load smaller files into memory first
+      const bodyBuffer = await c.req.arrayBuffer();
+      tempPath = await writeBodyToTemp(bodyBuffer);
+    }
 
     try {
       // Calculate MD5 and ETag
@@ -1267,11 +1338,20 @@ app.put('/s3/:bucket/*', s3AuthMiddleware, async (c) => {
         });
       }
 
-      // Get request body
-      const body = await c.req.arrayBuffer();
+      // Write request body to temporary file
+      // For large files (>100MB), use streaming to avoid memory issues
+      const STREAMING_THRESHOLD = 100 * 1024 * 1024; // 100MB
+      let tempPath: string;
 
-      // Write to temp file
-      const tempPath = await writeBodyToTemp(body);
+      if (contentLength > STREAMING_THRESHOLD) {
+        // Stream large files directly to disk
+        logger.info({ key, size: contentLength, bucket: bucketName }, 'Using streaming upload for large file (>100MB)');
+        tempPath = await streamBodyToTemp(c.req.raw);
+      } else {
+        // Load smaller files into memory first
+        const body = await c.req.arrayBuffer();
+        tempPath = await writeBodyToTemp(body);
+      }
 
       try {
         // Calculate MD5 and ETag

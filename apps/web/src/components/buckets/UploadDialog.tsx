@@ -18,7 +18,7 @@ export interface UploadDialogProps {
   onOpenChange: (open: boolean) => void;
   bucketName: string;
   currentPath?: string;
-  onUpload?: (files: File[]) => Promise<void>;
+  onUpload?: (files: File[], onProgress?: (progress: number) => void) => Promise<void>;
 }
 
 interface FileWithProgress {
@@ -60,36 +60,49 @@ export function UploadDialog({
     setIsUploading(true);
 
     try {
-      // TODO: Implement actual upload with progress tracking
-      // For now, simulate upload
+      // Upload files one by one with real progress tracking
       for (let i = 0; i < files.length; i++) {
         setFiles(prev => prev.map((f, idx) =>
-          idx === i ? { ...f, status: 'uploading' as const } : f
+          idx === i ? { ...f, status: 'uploading' as const, progress: 0 } : f
         ));
 
-        // Simulate upload progress
-        for (let progress = 0; progress <= 100; progress += 20) {
-          await new Promise(resolve => setTimeout(resolve, 200));
+        try {
+          // Call onUpload which will handle the actual S3 upload with progress callback
+          await onUpload?.([files[i].file], (progress) => {
+            // Update progress for the current file being uploaded
+            setFiles(prev => prev.map((f, idx) =>
+              idx === i ? { ...f, progress } : f
+            ));
+          });
+
+          // Mark as success
           setFiles(prev => prev.map((f, idx) =>
-            idx === i ? { ...f, progress } : f
+            idx === i ? { ...f, status: 'success' as const, progress: 100 } : f
+          ));
+        } catch (fileError) {
+          // Mark this file as error but continue with other files
+          setFiles(prev => prev.map((f, idx) =>
+            idx === i ? {
+              ...f,
+              status: 'error' as const,
+              error: fileError instanceof Error ? fileError.message : 'Upload failed',
+            } : f
           ));
         }
-
-        setFiles(prev => prev.map((f, idx) =>
-          idx === i ? { ...f, status: 'success' as const, progress: 100 } : f
-        ));
       }
 
-      // Call onUpload with actual files
-      await onUpload?.(files.map(f => f.file));
-
-      // Close dialog after successful upload
+      // Close dialog after all uploads complete (successful or not)
+      // Wait a bit to show the final status
       setTimeout(() => {
-        setFiles([]);
-        onOpenChange(false);
-      }, 1000);
+        const hasErrors = files.some(f => f.status === 'error');
+        if (!hasErrors) {
+          setFiles([]);
+          onOpenChange(false);
+        }
+      }, 1500);
     } catch (error) {
       console.error('Upload error:', error);
+      // This catch is for unexpected errors
       setFiles(prev => prev.map(f => ({
         ...f,
         status: 'error' as const,
@@ -153,9 +166,16 @@ export function UploadDialog({
                       <p className="text-sm font-medium truncate">
                         {fileWithProgress.file.name}
                       </p>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatFileSize(fileWithProgress.file.size)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {formatFileSize(fileWithProgress.file.size)}
+                        </span>
+                        {fileWithProgress.file.size > 100 * 1024 * 1024 && (
+                          <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                            Multipart
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Progress Bar */}

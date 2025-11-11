@@ -108,7 +108,7 @@ export default function BucketDetailsPage({
     }
   };
 
-  const handleUpload = async (files: File[]) => {
+  const handleUpload = async (files: File[], onProgress?: (progress: number) => void) => {
     if (!client) {
       setError('S3 client not configured');
       return;
@@ -119,12 +119,11 @@ export default function BucketDetailsPage({
     try {
       for (const file of files) {
         const key = currentPath ? `${currentPath}${file.name}` : file.name;
-        await uploadFile(client, decodeURIComponent(name), key, file);
+        await uploadFile(client, decodeURIComponent(name), key, file, onProgress);
       }
 
       // Reload objects after upload
       await loadObjects();
-      setIsUploadDialogOpen(false);
     } catch (err) {
       console.error('Upload failed:', err);
       setError(err instanceof Error ? err.message : 'Upload failed');
