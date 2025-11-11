@@ -1448,7 +1448,6 @@ app.delete('/s3/:bucket/*', s3AuthMiddleware, async (c) => {
       where: { id: object.id },
       data: {
         isDeleted: true,
-        deletedAt: new Date(),
       },
     });
 
