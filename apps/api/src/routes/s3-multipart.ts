@@ -706,4 +706,490 @@ app.get('/api/s3/:bucket', s3AuthMiddleware, async (c, next) => {
   }
 });
 
+/**
+ * Route aliases without /api prefix for Tailscale Serve path stripping
+ */
+
+/**
+ * Initiate multipart upload - POST /s3/:bucket/:key?uploads (alias)
+ */
+app.post('/s3/:bucket/*', s3AuthMiddleware, async (c, next) => {
+  try {
+    const bucketName = c.req.param('bucket');
+    const fullPath = c.req.path;
+    const key = fullPath.replace(`/s3/${bucketName}/`, '');
+    const user = c.get('user');
+
+    // Check for ?uploads query parameter
+    const url = new URL(c.req.url);
+    if (!url.searchParams.has('uploads')) {
+      // Not an initiate multipart upload request
+      // Pass to next middleware/route
+      return await next();
+    }
+
+    if (!key) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.InvalidArgument,
+        'Missing object key'
+      );
+      return c.text(xml, 400, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // Validate object key
+    const keyValidation = isValidObjectKey(key);
+    if (!keyValidation.valid) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.InvalidArgument,
+        keyValidation.error || 'Invalid object key'
+      );
+      return c.text(xml, 400, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    const bucket = await prisma.bucket.findUnique({
+      where: { name: bucketName },
+    });
+
+    if (!bucket) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.NoSuchBucket,
+        'The specified bucket does not exist'
+      );
+      return c.text(xml, 404, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    if (bucket.userId !== user.id) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.AccessDenied,
+        'Access Denied'
+      );
+      return c.text(xml, 403, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // Generate upload ID
+    const uploadId = generateUploadId();
+
+    // Get content type
+    const contentType = c.req.header('content-type') || getContentTypeFromExtension(key);
+
+    // Create multipart upload record
+    const multipartUpload = await prisma.multipartUpload.create({
+      data: {
+        uploadId,
+        bucketId: bucket.id,
+        key,
+        contentType,
+        metadata: {},
+      },
+    });
+
+    logger.info({ userId: user.id, bucketName: bucket.name, key, uploadId }, 'Multipart upload initiated');
+
+    const xml = buildInitiateMultipartUploadXml(bucket.name, key, uploadId);
+    return c.text(xml, 200, {
+      'Content-Type': 'application/xml',
+    });
+  } catch (error) {
+    logger.error({ error }, 'Initiate multipart upload error');
+    const xml = buildErrorXml(
+      S3ErrorCodes.InternalError,
+      'We encountered an internal error. Please try again.'
+    );
+    return c.text(xml, 500, {
+      'Content-Type': 'application/xml',
+    });
+  }
+});
+
+/**
+ * Upload part / Complete multipart upload / Abort multipart upload - PUT /s3/:bucket/:key (alias)
+ */
+app.put('/s3/:bucket/*', s3AuthMiddleware, async (c, next) => {
+  try {
+    const bucketName = c.req.param('bucket');
+    const fullPath = c.req.path;
+    const key = fullPath.replace(`/s3/${bucketName}/`, '');
+    const user = c.get('user');
+
+    // Check for uploadId query parameter
+    const url = new URL(c.req.url);
+    const uploadId = url.searchParams.get('uploadId');
+
+    if (!uploadId) {
+      // Not a multipart upload request
+      // Pass to next middleware/route
+      return await next();
+    }
+
+    if (!key) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.InvalidArgument,
+        'Missing object key'
+      );
+      return c.text(xml, 400, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    const bucket = await prisma.bucket.findUnique({
+      where: { name: bucketName },
+    });
+
+    if (!bucket) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.NoSuchBucket,
+        'The specified bucket does not exist'
+      );
+      return c.text(xml, 404, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    if (bucket.userId !== user.id) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.AccessDenied,
+        'Access Denied'
+      );
+      return c.text(xml, 403, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // Get multipart upload
+    const multipartUpload = await prisma.multipartUpload.findUnique({
+      where: { uploadId },
+      include: { parts: true },
+    });
+
+    if (!multipartUpload || multipartUpload.bucketId !== bucket.id || multipartUpload.key !== key) {
+      const xml = buildErrorXml(
+        'NoSuchUpload',
+        'The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.'
+      );
+      return c.text(xml, 404, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // Check for partNumber (upload part)
+    const partNumberParam = url.searchParams.get('partNumber');
+
+    if (partNumberParam) {
+      // Upload part
+      const partNumber = parseInt(partNumberParam, 10);
+
+      if (!isValidPartNumber(partNumber)) {
+        const xml = buildErrorXml(
+          S3ErrorCodes.InvalidArgument,
+          'Part number must be an integer between 1 and 10000'
+        );
+        return c.text(xml, 400, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      const contentLength = parseInt(c.req.header('content-length') || '0', 10);
+
+      // Get request body
+      const body = await c.req.arrayBuffer();
+
+      // Write to temp file
+      const tempPath = await writeBodyToTemp(body);
+
+      try {
+        // Save part
+        const etag = await savePart(tempPath, multipartUpload.id, partNumber);
+
+        // Create or update part record
+        const existingPart = await prisma.multipartUploadPart.findUnique({
+          where: {
+            multipartUploadId_partNumber: {
+              multipartUploadId: multipartUpload.id,
+              partNumber,
+            },
+          },
+        });
+
+        if (existingPart) {
+          await prisma.multipartUploadPart.update({
+            where: { id: existingPart.id },
+            data: {
+              etag,
+              size: contentLength,
+            },
+          });
+        } else {
+          await prisma.multipartUploadPart.create({
+            data: {
+              multipartUploadId: multipartUpload.id,
+              partNumber,
+              etag,
+              size: contentLength,
+            },
+          });
+        }
+
+        logger.info({ uploadId, partNumber, etag }, 'Part uploaded');
+
+        return c.text('', 200, {
+          'ETag': `"${etag}"`,
+        });
+      } finally {
+        // Clean up temp file
+        try {
+          await unlink(tempPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    } else {
+      // Complete multipart upload
+      // Parse body to get parts list
+      const bodyText = await c.req.text();
+      const parts = parseCompleteMultipartUploadXml(bodyText);
+
+      // Verify all parts exist
+      const verificationResult = await verifyParts(multipartUpload.id, parts);
+      if (!verificationResult.valid) {
+        const xml = buildErrorXml(
+          'InvalidPart',
+          verificationResult.error || 'One or more of the specified parts could not be found'
+        );
+        return c.text(xml, 400, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      // Combine parts
+      const destPath = generateObjectPath(bucket.volumePath, key);
+      const etag = await combineParts(multipartUpload.id, parts, destPath);
+
+      // Calculate total size
+      const totalSize = multipartUpload.parts.reduce((sum, part) => sum + part.size, 0);
+
+      // Generate version ID if versioning enabled
+      const versionId = bucket.versioningEnabled ? generateVersionId() : null;
+
+      // Check if object exists to determine create vs update
+      const existingObject = await prisma.object.findFirst({
+        where: {
+          bucketId: bucket.id,
+          key,
+          versionId: null,
+        },
+      });
+
+      let object;
+      if (existingObject && !bucket.versioningEnabled) {
+        object = await prisma.object.update({
+          where: { id: existingObject.id },
+          data: {
+            size: BigInt(totalSize),
+            contentType: multipartUpload.contentType,
+            etag,
+            storageClass: bucket.storageClass,
+            metadata: multipartUpload.metadata as any,
+            physicalPath: destPath,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        object = await prisma.object.create({
+          data: {
+            bucketId: bucket.id,
+            key,
+            size: BigInt(totalSize),
+            contentType: multipartUpload.contentType,
+            etag,
+            storageClass: bucket.storageClass,
+            metadata: multipartUpload.metadata as any,
+            versionId,
+            physicalPath: destPath,
+            isLatest: true,
+          },
+        });
+      }
+
+      // Clean up multipart upload
+      await cleanupMultipartUpload(multipartUpload.id);
+
+      logger.info({ userId: user.id, bucketName: bucket.name, key, uploadId, size: totalSize }, 'Multipart upload completed');
+
+      const xml = buildCompleteMultipartUploadXml(bucket.name, key, etag, object.versionId);
+      return c.text(xml, 200, {
+        'Content-Type': 'application/xml',
+      });
+    }
+  } catch (error) {
+    logger.error({ error }, 'Multipart upload PUT error');
+    const xml = buildErrorXml(
+      S3ErrorCodes.InternalError,
+      'We encountered an internal error. Please try again.'
+    );
+    return c.text(xml, 500, {
+      'Content-Type': 'application/xml',
+    });
+  }
+});
+
+/**
+ * List multipart uploads / List parts - GET /s3/:bucket (alias)
+ */
+app.get('/s3/:bucket', s3AuthMiddleware, async (c, next) => {
+  try {
+    const bucketName = c.req.param('bucket');
+    const user = c.get('user');
+
+    const url = new URL(c.req.url);
+
+    // Check for multipart upload queries
+    if (!url.searchParams.has('uploads') && !url.searchParams.has('uploadId')) {
+      // Not a multipart upload request
+      return await next();
+    }
+
+    const bucket = await prisma.bucket.findUnique({
+      where: { name: bucketName },
+    });
+
+    if (!bucket) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.NoSuchBucket,
+        'The specified bucket does not exist'
+      );
+      return c.text(xml, 404, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    if (bucket.userId !== user.id) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.AccessDenied,
+        'Access Denied'
+      );
+      return c.text(xml, 403, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // List multipart uploads
+    if (url.searchParams.has('uploads')) {
+      const prefix = url.searchParams.get('prefix') || undefined;
+      const maxUploadsParam = url.searchParams.get('max-uploads');
+      const maxUploads = maxUploadsParam ? Math.min(parseInt(maxUploadsParam, 10), 1000) : 1000;
+
+      const where: any = {
+        bucketId: bucket.id,
+      };
+
+      if (prefix) {
+        where.key = { startsWith: prefix };
+      }
+
+      const uploads = await prisma.multipartUpload.findMany({
+        where,
+        select: {
+          uploadId: true,
+          key: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: maxUploads + 1,
+      });
+
+      const isTruncated = uploads.length > maxUploads;
+      const contents = uploads.slice(0, maxUploads);
+
+      const xml = buildListMultipartUploadsXml({
+        bucketName: bucket.name,
+        prefix,
+        maxUploads,
+        isTruncated,
+        uploads: contents.map(u => ({
+          uploadId: u.uploadId,
+          key: u.key,
+          initiated: u.createdAt,
+        })),
+      });
+
+      return c.text(xml, 200, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // List parts
+    const uploadId = url.searchParams.get('uploadId');
+    if (!uploadId) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.InvalidArgument,
+        'Missing uploadId parameter'
+      );
+      return c.text(xml, 400, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    const multipartUpload = await prisma.multipartUpload.findUnique({
+      where: { uploadId },
+      include: { parts: { orderBy: { partNumber: 'asc' } } },
+    });
+
+    if (!multipartUpload || multipartUpload.bucketId !== bucket.id) {
+      const xml = buildErrorXml(
+        'NoSuchUpload',
+        'The specified upload does not exist'
+      );
+      return c.text(xml, 404, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    const maxPartsParam = url.searchParams.get('max-parts');
+    const maxParts = maxPartsParam ? Math.min(parseInt(maxPartsParam, 10), 1000) : 1000;
+    const partNumberMarker = url.searchParams.get('part-number-marker');
+    const partNumberMarkerInt = partNumberMarker ? parseInt(partNumberMarker, 10) : 0;
+
+    const filteredParts = multipartUpload.parts.filter(p => p.partNumber > partNumberMarkerInt);
+    const isTruncated = filteredParts.length > maxParts;
+    const parts = filteredParts.slice(0, maxParts);
+
+    const xml = buildListPartsXml({
+      bucketName: bucket.name,
+      key: multipartUpload.key,
+      uploadId,
+      maxParts,
+      isTruncated,
+      partNumberMarker: partNumberMarkerInt,
+      nextPartNumberMarker: isTruncated ? parts[parts.length - 1]?.partNumber : undefined,
+      parts: parts.map(p => ({
+        partNumber: p.partNumber,
+        etag: p.etag,
+        size: p.size,
+        lastModified: p.createdAt,
+      })),
+    });
+
+    return c.text(xml, 200, {
+      'Content-Type': 'application/xml',
+    });
+  } catch (error) {
+    logger.error({ error }, 'List multipart uploads/parts error');
+    const xml = buildErrorXml(
+      S3ErrorCodes.InternalError,
+      'We encountered an internal error. Please try again.'
+    );
+    return c.text(xml, 500, {
+      'Content-Type': 'application/xml',
+    });
+  }
+});
+
 } // end registerS3MultipartRoutes

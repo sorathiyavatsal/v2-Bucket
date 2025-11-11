@@ -28,10 +28,10 @@ export function registerS3BucketRoutes(app: Hono<AppEnv>) {
 console.log('🔧 s3-bucket.ts: Registering routes...');
 
 /**
- * List all buckets - GET /api/s3/
+ * List all buckets handler (shared between routes)
  */
-app.get('/api/s3', s3AuthMiddleware, async (c) => {
-  console.log('📍 ROOT ROUTE HIT: /api/s3');
+const handleListBuckets = async (c: any) => {
+  console.log('📍 ROOT ROUTE HIT: /api/s3 or /s3');
   try {
     const user = c.get('user');
 
@@ -62,12 +62,22 @@ app.get('/api/s3', s3AuthMiddleware, async (c) => {
       'Content-Type': 'application/xml',
     });
   }
-});
+};
 
 /**
- * Check if bucket exists - HEAD /{bucket}
+ * List all buckets - GET /api/s3/
  */
-app.on('HEAD', '/:bucket', s3AuthMiddleware, async (c) => {
+app.get('/api/s3', s3AuthMiddleware, handleListBuckets);
+
+/**
+ * List all buckets - GET /s3/ (alias without /api prefix for Tailscale Serve path stripping)
+ */
+app.get('/s3', s3AuthMiddleware, handleListBuckets);
+
+/**
+ * Check if bucket exists handler (shared between routes)
+ */
+const handleHeadBucket = async (c: any) => {
   try {
     const bucketName = c.req.param('bucket');
     const user = c.get('user');
@@ -91,7 +101,13 @@ app.on('HEAD', '/:bucket', s3AuthMiddleware, async (c) => {
     logger.error({ error }, 'Head bucket error');
     return c.text('', 500);
   }
-});
+};
+
+/**
+ * Check if bucket exists - HEAD /{bucket}
+ * Note: This route is NOT under /api/s3 because it's directly at bucket path
+ */
+app.on('HEAD', '/:bucket', s3AuthMiddleware, handleHeadBucket);
 
 /**
  * List bucket contents or get bucket configuration - GET /{bucket}
@@ -334,10 +350,25 @@ app.get('/api/s3/:bucket/', s3AuthMiddleware, async (c) => {
   return handleBucketRequest(c);
 });
 
+// Aliases without /api prefix for Tailscale Serve path stripping
+console.log('🔧 s3-bucket.ts: Registering GET /s3/:bucket (alias)');
+app.get('/s3/:bucket', s3AuthMiddleware, async (c) => {
+  console.log('📍 BUCKET ROUTE HIT (no slash, alias):', c.req.param('bucket'), c.req.path);
+  logger.debug({ bucket: c.req.param('bucket'), path: c.req.path }, 'BUCKET ROUTE (no slash, alias) MATCHED');
+  return handleBucketRequest(c);
+});
+
+console.log('🔧 s3-bucket.ts: Registering GET /s3/:bucket/ (alias)');
+app.get('/s3/:bucket/', s3AuthMiddleware, async (c) => {
+  console.log('📍 BUCKET ROUTE HIT (with slash, alias):', c.req.param('bucket'), c.req.path);
+  logger.debug({ bucket: c.req.param('bucket'), path: c.req.path }, 'BUCKET ROUTE (with slash, alias) MATCHED');
+  return handleBucketRequest(c);
+});
+
 /**
- * Create bucket - PUT /api/s3/{bucket}
+ * Create bucket handler (shared between routes)
  */
-app.put('/api/s3/:bucket', s3AuthMiddleware, async (c) => {
+const handleCreateBucket = async (c: any) => {
   try {
     const bucketName = c.req.param('bucket');
     const user = c.get('user');
@@ -457,12 +488,22 @@ app.put('/api/s3/:bucket', s3AuthMiddleware, async (c) => {
       'Content-Type': 'application/xml',
     });
   }
-});
+};
 
 /**
- * Delete bucket - DELETE /api/s3/{bucket}
+ * Create bucket - PUT /api/s3/{bucket}
  */
-app.delete('/api/s3/:bucket', s3AuthMiddleware, async (c) => {
+app.put('/api/s3/:bucket', s3AuthMiddleware, handleCreateBucket);
+
+/**
+ * Create bucket - PUT /s3/{bucket} (alias without /api prefix for Tailscale Serve path stripping)
+ */
+app.put('/s3/:bucket', s3AuthMiddleware, handleCreateBucket);
+
+/**
+ * Delete bucket handler (shared between routes)
+ */
+const handleDeleteBucket = async (c: any) => {
   try {
     const bucketName = c.req.param('bucket');
     const user = c.get('user');
@@ -521,6 +562,16 @@ app.delete('/api/s3/:bucket', s3AuthMiddleware, async (c) => {
       'Content-Type': 'application/xml',
     });
   }
-});
+};
+
+/**
+ * Delete bucket - DELETE /api/s3/{bucket}
+ */
+app.delete('/api/s3/:bucket', s3AuthMiddleware, handleDeleteBucket);
+
+/**
+ * Delete bucket - DELETE /s3/{bucket} (alias without /api prefix for Tailscale Serve path stripping)
+ */
+app.delete('/s3/:bucket', s3AuthMiddleware, handleDeleteBucket);
 
 } // end registerS3BucketRoutes

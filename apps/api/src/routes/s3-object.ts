@@ -781,4 +781,702 @@ app.delete('/api/s3/:bucket/*', s3AuthMiddleware, async (c) => {
   }
 });
 
+/**
+ * Route aliases without /api prefix for Tailscale Serve path stripping
+ */
+
+/**
+ * Check if object exists (HEAD) - HEAD /s3/:bucket/:key (alias)
+ */
+app.on('HEAD', '/s3/:bucket/*', s3AuthMiddleware, async (c) => {
+  try {
+    const bucketName = c.req.param('bucket');
+    // Manual path parsing workaround (Hono wildcard param broken)
+    const fullPath = c.req.path;
+    const key = fullPath.replace(`/s3/${bucketName}/`, '');
+    const user = c.get('user');
+
+    if (!key) {
+      return c.text('', 400);
+    }
+
+    const bucket = await prisma.bucket.findUnique({
+      where: { name: bucketName },
+    });
+
+    if (!bucket || bucket.userId !== user.id) {
+      return c.text('', 404);
+    }
+
+    const object = await prisma.object.findFirst({
+      where: {
+        bucketId: bucket.id,
+        key,
+        versionId: null,
+        isLatest: true,
+      },
+    });
+
+    if (!object || object.isDeleted) {
+      return c.text('', 404);
+    }
+
+    // Check if file exists on disk
+    const objectPath = generateObjectPath(bucket.volumePath, key);
+    const exists = await fileExists(objectPath);
+
+    if (!exists) {
+      return c.text('', 404);
+    }
+
+    return c.text('', 200, {
+      'Content-Type': object.contentType,
+      'Content-Length': object.size.toString(),
+      'ETag': object.etag,
+      'Last-Modified': object.updatedAt.toUTCString(),
+      'x-amz-storage-class': object.storageClass,
+      'x-amz-version-id': object.versionId || undefined,
+    });
+  } catch (error) {
+    logger.error({
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Head object error');
+    return c.text('', 500);
+  }
+});
+
+/**
+ * Get object (download) - GET /s3/:bucket/:key (alias)
+ */
+app.get('/s3/:bucket/*', s3AuthMiddleware, async (c) => {
+  console.log('📍 OBJECT ROUTE HIT (alias): /s3/:bucket/*');
+  try {
+    const bucketName = c.req.param('bucket');
+    // Manual path parsing workaround (Hono wildcard param broken)
+    const fullPath = c.req.path;
+    const pathAfterBucket = fullPath.replace(`/s3/${bucketName}/`, '');
+    const key = pathAfterBucket || c.req.param('*');
+    const user = c.get('user');
+
+    console.log('📍 Object route params (alias):', { bucketName, key, path: c.req.path, pathAfterBucket });
+    logger.debug({ bucketName, key, path: c.req.path, url: c.req.url }, 'S3 Object GET route handler (alias)');
+
+    // If no key or empty key, handle as bucket listing request
+    // This happens because /:bucket/* matches /bucket/ with empty wildcard
+    if (!key || key.trim() === '') {
+      // Get bucket for listing
+      const bucket = await prisma.bucket.findUnique({
+        where: { name: bucketName },
+      });
+
+      if (!bucket) {
+        const xml = buildErrorXml(
+          S3ErrorCodes.NoSuchBucket,
+          'The specified bucket does not exist',
+          `/${bucketName}`
+        );
+        return c.text(xml, 404, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      if (bucket.userId !== user.id) {
+        const xml = buildErrorXml(
+          S3ErrorCodes.AccessDenied,
+          'Access Denied'
+        );
+        return c.text(xml, 403, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      // Check query parameters
+      const url = new URL(c.req.url);
+
+      // Default: List bucket contents (ListObjectsV2)
+      const prefix = url.searchParams.get('prefix') || '';
+      const delimiter = url.searchParams.get('delimiter') || undefined;
+      const maxKeysParam = url.searchParams.get('max-keys');
+      const maxKeys = maxKeysParam ? Math.min(parseInt(maxKeysParam, 10), 1000) : 1000;
+      const marker = url.searchParams.get('marker') || undefined;
+      const startAfter = url.searchParams.get('start-after') || undefined;
+
+      // Build where clause
+      const where: any = {
+        bucketId: bucket.id,
+        isDeleted: false,
+      };
+
+      if (prefix) {
+        where.key = { startsWith: prefix };
+      }
+
+      if (startAfter) {
+        where.key = { ...where.key, gt: startAfter };
+      } else if (marker) {
+        where.key = { ...where.key, gt: marker };
+      }
+
+      // Fetch objects
+      const objects = await prisma.object.findMany({
+        where,
+        select: {
+          key: true,
+          size: true,
+          etag: true,
+          storageClass: true,
+          updatedAt: true,
+        },
+        orderBy: { key: 'asc' },
+        take: maxKeys + 1, // Fetch one extra to check if truncated
+      });
+
+      const isTruncated = objects.length > maxKeys;
+      const contents = objects.slice(0, maxKeys);
+
+      // Handle delimiter (common prefixes)
+      let commonPrefixes: string[] | undefined;
+      if (delimiter) {
+        const prefixes = new Set<string>();
+        const filteredContents: typeof contents = [];
+
+        for (const obj of contents) {
+          const keyAfterPrefix = obj.key.substring(prefix.length);
+          const delimiterIndex = keyAfterPrefix.indexOf(delimiter);
+
+          if (delimiterIndex !== -1) {
+            // This object is in a "subdirectory"
+            const commonPrefix = prefix + keyAfterPrefix.substring(0, delimiterIndex + 1);
+            prefixes.add(commonPrefix);
+          } else {
+            // This object is at the current level
+            filteredContents.push(obj);
+          }
+        }
+
+        commonPrefixes = Array.from(prefixes).sort();
+        contents.length = 0;
+        contents.push(...filteredContents);
+      }
+
+      const xml = buildListObjectsXml({
+        bucketName: bucket.name,
+        prefix: prefix || undefined,
+        marker: marker || startAfter,
+        maxKeys,
+        delimiter,
+        isTruncated,
+        nextMarker: isTruncated ? contents[contents.length - 1]?.key : undefined,
+        contents: contents.map(obj => ({
+          key: obj.key,
+          lastModified: obj.updatedAt,
+          etag: obj.etag,
+          size: obj.size,
+          storageClass: obj.storageClass,
+        })),
+        commonPrefixes,
+      });
+
+      return c.text(xml, 200, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // Get bucket
+    const bucket = await prisma.bucket.findUnique({
+      where: { name: bucketName },
+    });
+
+    if (!bucket) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.NoSuchBucket,
+        'The specified bucket does not exist'
+      );
+      return c.text(xml, 404, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    if (bucket.userId !== user.id) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.AccessDenied,
+        'Access Denied'
+      );
+      return c.text(xml, 403, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // Get object
+    const object = await prisma.object.findFirst({
+      where: {
+        bucketId: bucket.id,
+        key,
+        versionId: null,
+        isLatest: true,
+      },
+    });
+
+    if (!object || object.isDeleted) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.NoSuchKey,
+        'The specified key does not exist.'
+      );
+      return c.text(xml, 404, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // Get file from storage
+    const objectPath = generateObjectPath(bucket.volumePath, key);
+    const exists = await fileExists(objectPath);
+
+    if (!exists) {
+      logger.error({ objectPath, key, bucketName }, 'Object file not found on disk');
+      const xml = buildErrorXml(
+        S3ErrorCodes.NoSuchKey,
+        'The specified key does not exist.'
+      );
+      return c.text(xml, 404, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // Stream file
+    const stream = createReadStream(objectPath);
+
+    return c.body(stream as any, 200, {
+      'Content-Type': object.contentType,
+      'Content-Length': object.size.toString(),
+      'ETag': object.etag,
+      'Last-Modified': object.updatedAt.toUTCString(),
+      'x-amz-storage-class': object.storageClass,
+      'x-amz-version-id': object.versionId || undefined,
+    });
+  } catch (error) {
+    logger.error({
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Get object error');
+    const xml = buildErrorXml(
+      S3ErrorCodes.InternalError,
+      'We encountered an internal error. Please try again.'
+    );
+    return c.text(xml, 500, {
+      'Content-Type': 'application/xml',
+    });
+  }
+});
+
+/**
+ * Upload object (PUT) or Copy object - PUT /s3/:bucket/:key (alias)
+ */
+app.put('/s3/:bucket/*', s3AuthMiddleware, async (c) => {
+  try {
+    const bucketName = c.req.param('bucket');
+    // Manual path parsing workaround (Hono wildcard param broken)
+    const fullPath = c.req.path;
+    const key = fullPath.replace(`/s3/${bucketName}/`, '');
+    const user = c.get('user');
+
+    console.log('📍 OBJECT PUT ROUTE HIT (alias):', { bucket: bucketName, key, path: fullPath });
+
+    if (!key) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.InvalidArgument,
+        'Missing object key'
+      );
+      return c.text(xml, 400, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // Validate object key
+    const keyValidation = isValidObjectKey(key);
+    if (!keyValidation.valid) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.InvalidArgument,
+        keyValidation.error || 'Invalid object key'
+      );
+      return c.text(xml, 400, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    const bucket = await prisma.bucket.findUnique({
+      where: { name: bucketName },
+    });
+
+    if (!bucket) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.NoSuchBucket,
+        'The specified bucket does not exist'
+      );
+      return c.text(xml, 404, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    if (bucket.userId !== user.id) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.AccessDenied,
+        'Access Denied'
+      );
+      return c.text(xml, 403, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    // Check for copy operation
+    const copySource = c.req.header('x-amz-copy-source');
+
+    if (copySource) {
+      // Copy operation
+      const sourceMatch = copySource.match(/^\/?(.*?)\/(.*?)$/);
+      if (!sourceMatch) {
+        const xml = buildErrorXml(
+          S3ErrorCodes.InvalidArgument,
+          'Invalid copy source'
+        );
+        return c.text(xml, 400, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      const sourceBucketName = sourceMatch[1];
+      const sourceKey = decodeURIComponent(sourceMatch[2]);
+
+      const sourceBucket = await prisma.bucket.findUnique({
+        where: { name: sourceBucketName },
+      });
+
+      if (!sourceBucket || sourceBucket.userId !== user.id) {
+        const xml = buildErrorXml(
+          S3ErrorCodes.NoSuchBucket,
+          'The specified source bucket does not exist'
+        );
+        return c.text(xml, 404, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      const sourceObject = await prisma.object.findFirst({
+        where: {
+          bucketId: sourceBucket.id,
+          key: sourceKey,
+          versionId: null,
+          isLatest: true,
+        },
+      });
+
+      if (!sourceObject || sourceObject.isDeleted) {
+        const xml = buildErrorXml(
+          S3ErrorCodes.NoSuchKey,
+          'The specified source key does not exist'
+        );
+        return c.text(xml, 404, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      const sourceObjectPath = generateObjectPath(sourceBucket.volumePath, sourceKey);
+      const destPath = generateObjectPath(bucket.volumePath, key);
+
+      // Copy file
+      try {
+        const fs = await import('fs/promises');
+        await fs.mkdir(join(destPath, '..'), { recursive: true });
+        await fs.copyFile(sourceObjectPath, destPath);
+      } catch (error) {
+        logger.error({ error, sourceObjectPath, destPath }, 'Failed to copy object file');
+        const xml = buildErrorXml(
+          S3ErrorCodes.InternalError,
+          'Failed to copy object'
+        );
+        return c.text(xml, 500, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      const versionId = bucket.versioningEnabled ? generateVersionId() : null;
+
+      // Check if object exists to determine create vs update
+      const existingObject = await prisma.object.findFirst({
+        where: {
+          bucketId: bucket.id,
+          key,
+          versionId: null,
+        },
+      });
+
+      let object;
+      if (existingObject && !bucket.versioningEnabled) {
+        object = await prisma.object.update({
+          where: { id: existingObject.id },
+          data: {
+            size: sourceObject.size,
+            contentType: sourceObject.contentType,
+            etag: sourceObject.etag,
+            md5Hash: sourceObject.md5Hash,
+            storageClass: c.req.header('x-amz-storage-class') || sourceObject.storageClass,
+            metadata: sourceObject.metadata,
+            physicalPath: destPath,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        object = await prisma.object.create({
+          data: {
+            bucketId: bucket.id,
+            key,
+            size: sourceObject.size,
+            contentType: sourceObject.contentType,
+            etag: sourceObject.etag,
+            md5Hash: sourceObject.md5Hash,
+            storageClass: c.req.header('x-amz-storage-class') || sourceObject.storageClass,
+            metadata: sourceObject.metadata,
+            versionId,
+            physicalPath: destPath,
+            isLatest: true,
+          },
+        });
+      }
+
+      logger.info({ userId: user.id, bucketName: bucket.name, key }, 'Object copied via S3 API');
+
+      const xml = buildCopyObjectXml(object.etag, object.updatedAt);
+      return c.text(xml, 200, {
+        'Content-Type': 'application/xml',
+        'x-amz-version-id': object.versionId || undefined,
+      });
+    } else {
+      // Upload operation
+      const contentType = c.req.header('content-type') || getContentTypeFromExtension(key);
+      const contentLength = parseInt(c.req.header('content-length') || '0', 10);
+
+      if (contentLength > user.maxObjectSize) {
+        const xml = buildErrorXml(
+          'EntityTooLarge',
+          `Object size exceeds maximum allowed size of ${user.maxObjectSize} bytes`
+        );
+        return c.text(xml, 400, {
+          'Content-Type': 'application/xml',
+        });
+      }
+
+      // Get request body
+      const body = await c.req.arrayBuffer();
+
+      // Write to temp file
+      const tempPath = await writeBodyToTemp(body);
+
+      try {
+        // Calculate MD5 and ETag
+        const md5Hash = await calculateMD5(tempPath);
+        const etag = generateETag(tempPath);
+
+        // Validate Content-MD5 if provided
+        const clientMD5 = c.req.header('content-md5');
+        if (clientMD5 && clientMD5 !== md5Hash) {
+          const xml = buildErrorXml(
+            'BadDigest',
+            'The Content-MD5 you specified did not match what we received'
+          );
+          return c.text(xml, 400, {
+            'Content-Type': 'application/xml',
+          });
+        }
+
+        // Save file to storage
+        const destPath = generateObjectPath(bucket.volumePath, key);
+        await saveFile(tempPath, destPath);
+
+        // Parse metadata from headers (x-amz-meta-*)
+        const headers = Object.fromEntries(
+          Object.entries(c.req.header()).filter(([k]) => k.toLowerCase().startsWith('x-amz-meta-'))
+        );
+
+        const metadata: Record<string, string> = {};
+        for (const [header, value] of Object.entries(headers)) {
+          const metaKey = header.toLowerCase().replace('x-amz-meta-', '');
+          if (typeof value === 'string') {
+            metadata[metaKey] = value;
+          }
+        }
+
+        const versionId = bucket.versioningEnabled ? generateVersionId() : null;
+
+        // Check if object exists to determine create vs update
+        const existingObject = await prisma.object.findFirst({
+          where: {
+            bucketId: bucket.id,
+            key,
+            versionId: null,
+          },
+        });
+
+        const size = BigInt(contentLength);
+
+        let object;
+        if (existingObject && !bucket.versioningEnabled) {
+          object = await prisma.object.update({
+            where: { id: existingObject.id },
+            data: {
+              size,
+              contentType,
+              etag,
+              md5Hash,
+              storageClass: c.req.header('x-amz-storage-class') || bucket.storageClass,
+              metadata,
+              physicalPath: destPath,
+              updatedAt: new Date(),
+            },
+          });
+        } else {
+          object = await prisma.object.create({
+            data: {
+              bucketId: bucket.id,
+              key,
+              size,
+              contentType,
+              etag,
+              md5Hash,
+              storageClass: c.req.header('x-amz-storage-class') || bucket.storageClass,
+              metadata,
+              versionId,
+              physicalPath: destPath,
+              isLatest: true,
+            },
+          });
+        }
+
+        logger.info({ userId: user.id, bucketName: bucket.name, key, size: object.size }, 'Object uploaded via S3 API');
+
+        return c.text('', 200, {
+          'ETag': `"${object.etag}"`,
+          'x-amz-version-id': object.versionId || undefined,
+        });
+      } finally {
+        // Clean up temp file
+        try {
+          await unlink(tempPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    }
+  } catch (error) {
+    logger.error({
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Put object error');
+    const xml = buildErrorXml(
+      S3ErrorCodes.InternalError,
+      'We encountered an internal error. Please try again.'
+    );
+    return c.text(xml, 500, {
+      'Content-Type': 'application/xml',
+    });
+  }
+});
+
+/**
+ * Delete object - DELETE /s3/:bucket/:key (alias)
+ */
+app.delete('/s3/:bucket/*', s3AuthMiddleware, async (c) => {
+  try {
+    const bucketName = c.req.param('bucket');
+    // Manual path parsing workaround (Hono wildcard param broken)
+    const fullPath = c.req.path;
+    const key = fullPath.replace(`/s3/${bucketName}/`, '');
+    const user = c.get('user');
+
+    if (!key) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.InvalidArgument,
+        'Missing object key'
+      );
+      return c.text(xml, 400, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    const bucket = await prisma.bucket.findUnique({
+      where: { name: bucketName },
+    });
+
+    if (!bucket) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.NoSuchBucket,
+        'The specified bucket does not exist'
+      );
+      return c.text(xml, 404, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    if (bucket.userId !== user.id) {
+      const xml = buildErrorXml(
+        S3ErrorCodes.AccessDenied,
+        'Access Denied'
+      );
+      return c.text(xml, 403, {
+        'Content-Type': 'application/xml',
+      });
+    }
+
+    const object = await prisma.object.findFirst({
+      where: {
+        bucketId: bucket.id,
+        key,
+        versionId: null,
+        isLatest: true,
+      },
+    });
+
+    if (!object) {
+      // S3 returns 204 No Content even if object doesn't exist (idempotent operation)
+      return c.body(null, 204);
+    }
+
+    // Soft delete: mark as deleted
+    await prisma.object.update({
+      where: { id: object.id },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+      },
+    });
+
+    // Delete physical file
+    const objectPath = generateObjectPath(bucket.volumePath, key);
+    try {
+      await deleteFile(objectPath);
+    } catch (error) {
+      logger.warn({ error, objectPath, key }, 'Failed to delete object file from disk');
+    }
+
+    logger.info({ userId: user.id, bucketName: bucket.name, key }, 'Object deleted via S3 API');
+
+    return c.body(null, 204);
+  } catch (error) {
+    logger.error({
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Delete object error');
+    const xml = buildErrorXml(
+      S3ErrorCodes.InternalError,
+      'We encountered an internal error. Please try again.'
+    );
+    return c.text(xml, 500, {
+      'Content-Type': 'application/xml',
+    });
+  }
+});
+
 } // end registerS3ObjectRoutes
