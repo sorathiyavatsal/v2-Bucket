@@ -102,7 +102,7 @@ app.on('HEAD', '/api/s3/:bucket/*', s3AuthMiddleware, async (c) => {
       'ETag': object.etag,
       'Last-Modified': object.updatedAt.toUTCString(),
       'x-amz-storage-class': object.storageClass,
-      'x-amz-version-id': object.versionId || undefined,
+      ...(object.versionId ? { 'x-amz-version-id': object.versionId } : {}),
     });
   } catch (error) {
     logger.error({
@@ -298,7 +298,7 @@ app.get('/api/s3/:bucket/*', s3AuthMiddleware, async (c) => {
       'ETag': object.etag,
       'Last-Modified': object.updatedAt.toUTCString(),
       'x-amz-storage-class': object.storageClass,
-      'x-amz-version-id': object.versionId || undefined,
+      ...(object.versionId ? { 'x-amz-version-id': object.versionId } : {}),
       // Include custom metadata as x-amz-meta- headers
       ...Object.fromEntries(
         Object.entries(object.metadata as Record<string, string> || {}).map(
@@ -835,7 +835,7 @@ app.on('HEAD', '/s3/:bucket/*', s3AuthMiddleware, async (c) => {
       'ETag': object.etag,
       'Last-Modified': object.updatedAt.toUTCString(),
       'x-amz-storage-class': object.storageClass,
-      'x-amz-version-id': object.versionId || undefined,
+      ...(object.versionId ? { 'x-amz-version-id': object.versionId } : {}),
     });
   } catch (error) {
     logger.error({
@@ -1053,7 +1053,7 @@ app.get('/s3/:bucket/*', s3AuthMiddleware, async (c) => {
       'ETag': object.etag,
       'Last-Modified': object.updatedAt.toUTCString(),
       'x-amz-storage-class': object.storageClass,
-      'x-amz-version-id': object.versionId || undefined,
+      ...(object.versionId ? { 'x-amz-version-id': object.versionId } : {}),
     });
   } catch (error) {
     logger.error({
@@ -1250,7 +1250,7 @@ app.put('/s3/:bucket/*', s3AuthMiddleware, async (c) => {
       const xml = buildCopyObjectXml(object.etag, object.updatedAt);
       return c.text(xml, 200, {
         'Content-Type': 'application/xml',
-        'x-amz-version-id': object.versionId || undefined,
+        ...(object.versionId ? { 'x-amz-version-id': object.versionId } : {}),
       });
     } else {
       // Upload operation
@@ -1357,7 +1357,7 @@ app.put('/s3/:bucket/*', s3AuthMiddleware, async (c) => {
 
         return c.text('', 200, {
           'ETag': `"${object.etag}"`,
-          'x-amz-version-id': object.versionId || undefined,
+          ...(object.versionId ? { 'x-amz-version-id': object.versionId } : {}),
         });
       } finally {
         // Clean up temp file
